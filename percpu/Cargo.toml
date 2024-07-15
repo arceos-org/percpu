@@ -1,13 +1,15 @@
 [package]
 name = "percpu"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Yuekai Jia <equation618@gmail.com>"]
 description = "Define and access per-CPU data structures"
 license = "GPL-3.0-or-later OR Apache-2.0 OR MulanPSL-2.0"
 homepage = "https://github.com/arceos-org/arceos"
 repository = "https://github.com/arceos-org/percpu"
-documentation = "https://arceos-org.github.io/percpu/percpu"
+documentation = "https://docs.rs/percpu"
+keywords = ["arceos", "percpu"]
+categories = ["development-tools::procedural-macro-helpers", "no-std"]
 
 [features]
 # For single CPU use, just make the per-CPU data a global variable.
