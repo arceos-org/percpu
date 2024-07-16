@@ -1,6 +1,6 @@
 # percpu
 
-[![CI](https://github.com/arceos-org/percpu/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arceos-org/percpu/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/percpu)](https://crates.io/crates/percpu)
 
 Define and access per-CPU data structures.
 
