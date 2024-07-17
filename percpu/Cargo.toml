@@ -1,6 +1,6 @@
 [package]
 name = "percpu"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Yuekai Jia <equation618@gmail.com>"]
 description = "Define and access per-CPU data structures"
