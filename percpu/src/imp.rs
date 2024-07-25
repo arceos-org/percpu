@@ -72,8 +72,10 @@ pub fn get_local_thread_pointer() -> usize {
                 };
             } else if #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))] {
                 core::arch::asm!("mv {}, gp", out(reg) tp)
-            } else if #[cfg(target_arch = "aarch64")] {
+            } else if #[cfg(all(target_arch = "aarch64", not(feature = "hv")))] {
                 core::arch::asm!("mrs {}, TPIDR_EL1", out(reg) tp)
+            } else if #[cfg(all(target_arch = "aarch64", feature = "hv"))] {
+                core::arch::asm!("mrs {}, TPIDR_EL2", out(reg) tp)
             }
         }
     }

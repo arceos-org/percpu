@@ -19,6 +19,7 @@ sp-naive = ["percpu_macros/sp-naive"]
 preempt = ["percpu_macros/preempt", "dep:kernel_guard"]
 
 default = []
+hv = []
 
 [dependencies]
 cfg-if = "1.0"
