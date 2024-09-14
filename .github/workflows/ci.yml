@@ -25,6 +25,21 @@ jobs:
       run: cargo clippy --target ${{ matrix.targets }} --all-features -- -A clippy::new_without_default
     - name: Build
       run: cargo build --target ${{ matrix.targets }} --all-features
+
+  example:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust-toolchain: [nightly-2024-08-12, nightly-2024-09-12]
+        targets: [x86_64-unknown-linux-gnu]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        toolchain: ${{ matrix.rust-toolchain }}
+        components: rust-src, clippy, rustfmt
+        targets: ${{ matrix.targets }}
     - name: Build example
       if: ${{ matrix.targets == 'x86_64-unknown-linux-gnu' }}
       run: cargo build --target ${{ matrix.targets }} -p percpu --example test_percpu
