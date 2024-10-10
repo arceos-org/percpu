@@ -82,7 +82,7 @@ pub fn gen_current_ptr(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStream {
 
 /// Generate a code block that reads the value of the per-CPU variable on the current CPU, based on the inner symbol
 /// name and the type of the variable.
-/// 
+///
 /// The type of the variable must be one of the following: `bool`, `u8`, `u16`, `u32`, `u64`, or `usize`.
 pub fn gen_read_current_raw(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStream {
     let ty_str = quote!(#ty).to_string();
@@ -157,7 +157,7 @@ pub fn gen_read_current_raw(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStre
 
 /// Generate a code block that writes the value of the per-CPU variable on the current CPU, based on the inner symbol
 /// name, the identifier of the value to write, and the type of the variable.
-/// 
+///
 /// The type of the variable must be one of the following: `bool`, `u8`, `u16`, `u32`, `u64`, or `usize`.
 pub fn gen_write_current_raw(symbol: &Ident, val: &Ident, ty: &Type) -> proc_macro2::TokenStream {
     let ty_str = quote!(#ty).to_string();

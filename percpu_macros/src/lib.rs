@@ -18,24 +18,24 @@ fn compiler_error(err: Error) -> TokenStream {
     err.to_compile_error().into()
 }
 
-/// This function does nothing. It is used to hold the documentation about the implementation details of the 
+/// This function does nothing. It is used to hold the documentation about the implementation details of the
 /// [`def_percpu`] macro.
-/// 
+///
 /// ## Implementation details of the `def_percpu` macro
-/// 
+///
 /// ### Core idea
-/// 
+///
 /// The core idea is to collect all per-CPU static variables to a single section (e.g., `.percpu`), then allocate a
 /// per-CPU data area, with the size equals to the size of the `.percpu` section, for each CPU (it can be done
 /// statically or dynamically), then copy the `.percpu` section to each per-CPU data area during initialization.
-/// 
-/// The address of a per-CPU static variable on a given CPU can be calculated by adding the offset of the variable 
+///
+/// The address of a per-CPU static variable on a given CPU can be calculated by adding the offset of the variable
 /// (relative to the section base) to the base address of the per-CPU data area on the CPU.
-/// 
+///
 /// ### How to access the per-CPU data
-/// 
+///
 /// To access a per-CPU static variable on a given CPU, three values are needed:
-/// 
+///
 /// - The base address of the per-CPU data area on the CPU,
 ///   - which can be calculated by the base address of the whole per-CPU data area and the CPU ID,
 /// - The offset of the per-CPU static variable relative to the per-CPU data area base,
@@ -43,29 +43,29 @@ fn compiler_error(err: Error) -> TokenStream {
 ///     AArch64, or `%hi(symbol)` and `%lo(symbol)` on RISC-V.
 /// - The size of the per-CPU static variable,
 ///   - which we actually do not need to know, just give the right type to rust compiler.
-/// 
+///
 /// ### Generated code
-/// 
+///
 /// For each static variable `X` with type `T` that is defined with the `def_percpu` macro, the following items are
 /// generated:
-/// 
+///
 /// - A static variable `__PERCPU_X` with type `T` that stores the per-CPU data.
-/// 
+///
 ///   This variable is placed in the `.percpu` section. All attributes of the original static variable, as well as the
 ///   initialization expression, are preserved.
-/// 
+///
 ///   This variable is never, and should never be, accessed directly. To access the per-CPU data, the offset of the
 ///   variable is, and should be, used.
-/// 
+///
 /// - A zero-sized wrapper struct `X_WRAPPER` that is used to access the per-CPU data.
-/// 
+///
 ///   Some methods are generated in this struct to access the per-CPU data. For primitive integer types, extra methods
 ///   are generated to accelerate the access.
-/// 
+///
 /// - A static variable `X` of type `X_WRAPPER` that is used to access the per-CPU data.
 ///   
 ///   This variable is always generated with the same visibility and attributes as the original static variable.
-/// 
+///
 #[doc(hidden)]
 #[allow(dead_code)]
 fn def_percpu_impl_detail() {}
@@ -215,9 +215,9 @@ pub fn def_percpu(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
             /// Returns the raw pointer of this per-CPU static variable on the given CPU.
-            /// 
+            ///
             /// # Safety
-            /// 
+            ///
             /// Caller must ensure that
             /// - the CPU ID is valid, and
             /// - data races will not happen.
@@ -229,9 +229,9 @@ pub fn def_percpu(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
             /// Returns the reference of the per-CPU static variable on the given CPU.
-            /// 
+            ///
             /// # Safety
-            /// 
+            ///
             /// Caller must ensure that
             /// - the CPU ID is valid, and
             /// - data races will not happen.
@@ -241,9 +241,9 @@ pub fn def_percpu(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
             /// Returns the mutable reference of the per-CPU static variable on the given CPU.
-            /// 
+            ///
             /// # Safety
-            /// 
+            ///
             /// Caller must ensure that
             /// - the CPU ID is valid, and
             /// - data races will not happen.
