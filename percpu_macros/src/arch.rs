@@ -16,29 +16,27 @@ fn macos_unimplemented(item: proc_macro2::TokenStream) -> proc_macro2::TokenStre
 pub fn gen_offset(symbol: &Ident) -> proc_macro2::TokenStream {
     // the outer pair of braces is necessary to make the result an expression
     quote! {
-        {
+        unsafe {
             let value: usize;
-            unsafe {
-                #[cfg(target_arch = "x86_64")]
-                ::core::arch::asm!(
-                    "movabs {0}, offset {VAR}",
-                    out(reg) value,
-                    VAR = sym #symbol,
-                );
-                #[cfg(target_arch = "aarch64")]
-                ::core::arch::asm!(
-                    "movz {0}, #:abs_g0_nc:{VAR}",
-                    out(reg) value,
-                    VAR = sym #symbol,
-                );
-                #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
-                ::core::arch::asm!(
-                    "lui {0}, %hi({VAR})",
-                    "addi {0}, {0}, %lo({VAR})",
-                    out(reg) value,
-                    VAR = sym #symbol,
-                );
-            }
+            #[cfg(target_arch = "x86_64")]
+            ::core::arch::asm!(
+                "movabs {0}, offset {VAR}",
+                out(reg) value,
+                VAR = sym #symbol,
+            );
+            #[cfg(target_arch = "aarch64")]
+            ::core::arch::asm!(
+                "movz {0}, #:abs_g0_nc:{VAR}",
+                out(reg) value,
+                VAR = sym #symbol,
+            );
+            #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+            ::core::arch::asm!(
+                "lui {0}, %hi({VAR})",
+                "addi {0}, {0}, %lo({VAR})",
+                out(reg) value,
+                VAR = sym #symbol,
+            );
             value
         }
     }
