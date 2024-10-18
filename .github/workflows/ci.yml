@@ -22,14 +22,16 @@ jobs:
       run: rustc --version --verbose
     - name: Check code format
       run: cargo fmt --all -- --check
-    - name: Check ld.lld --version
+    - name: Check linkers version
       run: |
+        echo "===Test if rust-lld is installed"
+        rust-lld --version || true
         echo "===Check ld.lld --version"
-        ld.lld --version
+        ld.lld --version || true
         echo "===Check ld --version"
-        ld --version
+        ld --version || true
         echo "===Check lld --version"
-        lld --version
+        lld --version || true
         exit 0
     - name: Clippy
       run: cargo clippy --target ${{ matrix.targets }} --all-features -- -A clippy::new_without_default
