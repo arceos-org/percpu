@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust-toolchain: [nightly-2024-05-02, nightly]
+        rust-toolchain: [nightly]
         targets: [x86_64-unknown-linux-gnu, x86_64-unknown-none, riscv64gc-unknown-none-elf, aarch64-unknown-none-softfloat]
         os: [ubuntu-20.04, ubuntu-22.04]
     steps:
@@ -22,6 +22,15 @@ jobs:
       run: rustc --version --verbose
     - name: Check code format
       run: cargo fmt --all -- --check
+    - name: Check ld.lld --version
+      run: |
+        echo "===Check ld.lld --version"
+        ld.lld --version
+        echo "===Check ld --version"
+        ld --version
+        echo "===Check lld --version"
+        lld --version
+        exit 0
     - name: Clippy
       run: cargo clippy --target ${{ matrix.targets }} --all-features -- -A clippy::new_without_default
     - name: Build
