@@ -128,4 +128,28 @@ fn test_percpu() {
         assert_eq!(s.foo, 0x6666);
         assert_eq!(s.bar, 200);
     }
+    
+    // test read on another CPU
+    set_local_thread_pointer(1); // we are now on CPU 1
+
+    println!("bool value on CPU 1: {}", BOOL.read_current());
+    println!("u8 value on CPU 1: {}", U8.read_current());
+    println!("u16 value on CPU 1: {:#x}", U16.read_current());
+    println!("u32 value on CPU 1: {:#x}", U32.read_current());
+    println!("u64 value on CPU 1: {:#x}", U64.read_current());
+    println!("usize value on CPU 1: {:#x}", USIZE.read_current());
+
+    assert!(!BOOL.read_current());
+    assert_eq!(U8.read_current(), 222);
+    assert_eq!(U16.read_current(), 0x1234);
+    assert_eq!(U32.read_current(), 0xf00d_f00d);
+    assert_eq!(U64.read_current(), 0xfeed_feed_feed_feed);
+    assert_eq!(USIZE.read_current(), 0x0000_ffff);
+
+    STRUCT.with_current(|s| {
+        println!("struct.foo value on CPU 1: {:#x}", s.foo);
+        println!("struct.bar value on CPU 1: {}", s.bar);
+        assert_eq!(s.foo, 0x6666);
+        assert_eq!(s.bar, 200);
+    });
 }
