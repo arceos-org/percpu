@@ -102,14 +102,14 @@ fn test_percpu() {
 
     // test remote write
     unsafe {
-        *BOOL.remote_ptr(1) = false;
-        *U8.remote_ptr(1) = 222;
-        *U16.remote_ptr(1) = 0x1234;
-        *U32.remote_ptr(1) = 0xf00d_f00d;
-        *U64.remote_ptr(1) = 0xfeed_feed_feed_feed;
-        *USIZE.remote_ptr(1) = 0x0000_ffff;
+        *BOOL.remote_ref_mut_raw(1) = false;
+        *U8.remote_ref_mut_raw(1) = 222;
+        *U16.remote_ref_mut_raw(1) = 0x1234;
+        *U32.remote_ref_mut_raw(1) = 0xf00d_f00d;
+        *U64.remote_ref_mut_raw(1) = 0xfeed_feed_feed_feed;
+        *USIZE.remote_ref_mut_raw(1) = 0x0000_ffff;
 
-        *STRUCT.remote_ptr(1) = Struct {
+        *STRUCT.remote_ref_mut_raw(1) = Struct {
             foo: 0x6666,
             bar: 200,
         };
@@ -124,7 +124,7 @@ fn test_percpu() {
         assert_eq!(*U64.remote_ptr(1), 0xfeed_feed_feed_feed);
         assert_eq!(*USIZE.remote_ptr(1), 0x0000_ffff);
 
-        let s = &*STRUCT.remote_ptr(1);
+        let s = STRUCT.remote_ref_raw(1);
         assert_eq!(s.foo, 0x6666);
         assert_eq!(s.bar, 200);
     }
