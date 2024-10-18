@@ -128,7 +128,7 @@ fn test_percpu() {
         assert_eq!(s.foo, 0x6666);
         assert_eq!(s.bar, 200);
     }
-    
+
     // test read on another CPU
     set_local_thread_pointer(1); // we are now on CPU 1
 
