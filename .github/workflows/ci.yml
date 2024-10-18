@@ -4,11 +4,11 @@ on: [push, pull_request]
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
       matrix:
-        rust-toolchain: [nightly]
+        rust-toolchain: [nightly-2024-05-02]
         targets: [x86_64-unknown-linux-gnu, x86_64-unknown-none, riscv64gc-unknown-none-elf, aarch64-unknown-none-softfloat]
     steps:
     - uses: actions/checkout@v4
@@ -30,7 +30,7 @@ jobs:
       run: cargo test --target ${{ matrix.targets }} -- --nocapture
 
   doc:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
     permissions:
@@ -41,6 +41,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@nightly
+      with:
+        toolchain: nightly-2024-05-02
     - name: Build docs
       continue-on-error: ${{ github.ref != env.default-branch && github.event_name != 'pull_request' }}
       run: cargo doc --no-deps
