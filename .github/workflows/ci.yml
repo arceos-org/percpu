@@ -45,7 +45,7 @@ jobs:
       run: cargo run --target ${{ matrix.targets }} -p percpu --example test_percpu
     - name: Check example binary comment
       if: ${{ matrix.targets == 'x86_64-unknown-linux-gnu' }}
-      run: objdump -j .comment -s target/debug/examples/test_percpu
+      run: objdump -j .comment -s target/x86_64-unknown-linux-gnu/debug/examples/test_percpu
 
   doc:
     runs-on: ubuntu-20.04
