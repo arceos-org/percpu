@@ -109,7 +109,10 @@ fn test_percpu() {
         *U64.remote_ptr(1) = 0xfeed_feed_feed_feed;
         *USIZE.remote_ptr(1) = 0x0000_ffff;
 
-        *STRUCT.remote_ptr(1) = Struct { foo: 0x6666, bar: 200 };
+        *STRUCT.remote_ptr(1) = Struct {
+            foo: 0x6666,
+            bar: 200,
+        };
     }
 
     // test remote read
