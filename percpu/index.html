@@ -1,0 +1,59 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="percpu"><title>percpu - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-5d1d17d0.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="percpu" data-themes="" data-resource-suffix="" data-rustdoc-version="1.86.0-nightly (99768c80a 2025-01-23)" data-channel="nightly" data-search-js="search-ccb196c1.js" data-settings-js="settings-0f613d39.js" ><script src="../static.files/storage-59e33391.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../percpu/index.html">percpu</a><span class="version">0.1.7</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#percpu" title="percpu">percpu</a><ul><li><a href="#thread-pointer-register-used" title="Thread Pointer Register Used">Thread Pointer Register Used</a></li><li><a href="#examples" title="Examples">Examples</a></li><li><a href="#cargo-features" title="Cargo Features">Cargo Features</a></li><li><a href="#note-for-risc-v" title="Note for RISC-V">Note for RISC-V</a></li></ul></li></ul><h3><a href="#structs">Crate Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#statics" title="Statics">Statics</a></li><li><a href="#functions" title="Functions">Functions</a></li><li><a href="#attributes" title="Attribute Macros">Attribute Macros</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>percpu</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/percpu/lib.rs.html#1-26">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="percpu"><a class="doc-anchor" href="#percpu">§</a>percpu</h2>
+<p><a href="https://crates.io/crates/percpu"><img src="https://img.shields.io/crates/v/percpu" alt="Crates.io" /></a>
+<a href="https://docs.rs/percpu"><img src="https://docs.rs/percpu/badge.svg" alt="Docs.rs" /></a>
+<a href="https://github.com/arceos-org/percpu/actions/workflows/ci.yml"><img src="https://github.com/arceos-org/percpu/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></p>
+<p>Define and access per-CPU data structures.</p>
+<p>All per-CPU data is placed into several contiguous memory regions called
+<strong>per-CPU data areas</strong>, the number of which is the number of CPUs. Each CPU
+has its own per-CPU data area. The architecture-specific thread pointer
+register (e.g., <code>GS_BASE</code> on x86_64) is set to the base address of the area
+on initialization.</p>
+<p>When accessing the per-CPU data on the current CPU, it first use the thread
+pointer register to obtain the corresponding per-CPU data area, and then add
+an offset to access the corresponding field.</p>
+<h3 id="thread-pointer-register-used"><a class="doc-anchor" href="#thread-pointer-register-used">§</a>Thread Pointer Register Used</h3><div><table><thead><tr><th>Architecture</th><th>Register</th><th>per-CPU Data Addr</th></tr></thead><tbody>
+<tr><td>riscv</td><td>gp</td><td>gp + offset</td></tr>
+<tr><td>aarch64</td><td>tpidr</td><td>tpidr + offset</td></tr>
+<tr><td>x86_64</td><td>gs</td><td>gs:offset</td></tr>
+<tr><td>loongarch64</td><td>$r21</td><td>$r21 + offset</td></tr>
+</tbody></table>
+</div><h3 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[percpu::def_percpu]
+</span><span class="kw">static </span>CPU_ID: usize = <span class="number">0</span>;
+
+<span class="comment">// initialize per-CPU data for 4 CPUs.
+</span>percpu::init(<span class="number">4</span>);
+<span class="comment">// set the thread pointer register to the per-CPU data area 0.
+</span>percpu::set_local_thread_pointer(<span class="number">0</span>);
+
+<span class="comment">// access the per-CPU data `CPU_ID` on the current CPU.
+</span><span class="macro">println!</span>(<span class="string">"{}"</span>, CPU_ID.read_current()); <span class="comment">// prints "0"
+</span>CPU_ID.write_current(<span class="number">1</span>);
+<span class="macro">println!</span>(<span class="string">"{}"</span>, CPU_ID.read_current()); <span class="comment">// prints "1"</span></code></pre></div>
+<p>Currently, you need to <strong>modify the linker script manually</strong>, add the following lines to your linker script:</p>
+<div class="example-wrap"><pre class="language-text"><code>. = ALIGN(4K);
+_percpu_start = .;
+.percpu 0x0 (NOLOAD) : AT(_percpu_start) {
+    _percpu_load_start = .;
+    *(.percpu .percpu.*)
+    _percpu_load_end = .;
+    . = _percpu_load_start + ALIGN(64) * CPU_NUM;
+}
+. = _percpu_start + SIZEOF(.percpu);</code></pre></div><h3 id="cargo-features"><a class="doc-anchor" href="#cargo-features">§</a>Cargo Features</h3>
+<ul>
+<li><code>sp-naive</code>: For <strong>single-core</strong> use. In this case, each per-CPU data is
+just a global variable, architecture-specific thread pointer register is
+not used.</li>
+<li><code>preempt</code>: For <strong>preemptible</strong> system use. In this case, we need to disable
+preemption when accessing per-CPU data. Otherwise, the data may be corrupted
+when it’s being accessing and the current thread happens to be preempted.</li>
+<li><code>arm-el2</code>: For <strong>ARM system</strong> running at <strong>EL2</strong> use (e.g. hypervisors).
+In this case, we use <code>TPIDR_EL2</code> instead of <code>TPIDR_EL1</code>
+to store the base address of per-CPU data area.</li>
+</ul>
+<h3 id="note-for-risc-v"><a class="doc-anchor" href="#note-for-risc-v">§</a>Note for RISC-V</h3>
+<p>Since RISC-V does not provide separate thread pointer registers for user and
+kernel mode, we temporarily use the <code>gp</code> register to point to the per-CPU data
+area, while the <code>tp</code> register is used for thread-local storage.</p>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.EXAMPLE_PERCPU_DATA_WRAPPER.html" title="struct percpu::EXAMPLE_PERCPU_DATA_WRAPPER">EXAMPLE_<wbr>PERCPU_<wbr>DATA_<wbr>WRAPPER</a></dt><dd>Wrapper struct for the per-CPU data <a href="static.EXAMPLE_PERCPU_DATA.html" title="static percpu::EXAMPLE_PERCPU_DATA"><code>EXAMPLE_PERCPU_DATA</code></a></dd></dl><h2 id="statics" class="section-header">Statics<a href="#statics" class="anchor">§</a></h2><dl class="item-table"><dt><a class="static" href="static.EXAMPLE_PERCPU_DATA.html" title="static percpu::EXAMPLE_PERCPU_DATA">EXAMPLE_<wbr>PERCPU_<wbr>DATA</a><wbr><span class="stab portability" title="Available on `doc` only"><code>doc</code></span></dt><dd>Example per-CPU data for documentation only.</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.get_local_thread_pointer.html" title="fn percpu::get_local_thread_pointer">get_<wbr>local_<wbr>thread_<wbr>pointer</a></dt><dd>Read the architecture-specific thread pointer register on the current CPU.</dd><dt><a class="fn" href="fn.init.html" title="fn percpu::init">init</a></dt><dd>Initialize the per-CPU data area for <code>max_cpu_num</code> CPUs.</dd><dt><a class="fn" href="fn.percpu_area_base.html" title="fn percpu::percpu_area_base">percpu_<wbr>area_<wbr>base</a><wbr><span class="stab portability" title="Available on non-crate feature `sp-naive` only">Non-<code>sp-naive</code></span></dt><dd>Returns the base address of the per-CPU data area on the given CPU.</dd><dt><a class="fn" href="fn.percpu_area_size.html" title="fn percpu::percpu_area_size">percpu_<wbr>area_<wbr>size</a><wbr><span class="stab portability" title="Available on non-crate feature `sp-naive` only">Non-<code>sp-naive</code></span></dt><dd>Returns the per-CPU data area size for one CPU.</dd><dt><a class="fn" href="fn.set_local_thread_pointer.html" title="fn percpu::set_local_thread_pointer">set_<wbr>local_<wbr>thread_<wbr>pointer</a></dt><dd>Set the architecture-specific thread pointer register to the per-CPU data
+area base on the current CPU.</dd></dl><h2 id="attributes" class="section-header">Attribute Macros<a href="#attributes" class="anchor">§</a></h2><dl class="item-table"><dt><a class="attr" href="attr.def_percpu.html" title="attr percpu::def_percpu">def_<wbr>percpu</a></dt><dd>Defines a per-CPU static variable.</dd></dl></section></div></main></body></html>

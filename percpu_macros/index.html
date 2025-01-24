@@ -1,0 +1,51 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Macros to define and access a per-CPU data structure."><title>percpu_macros - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-5d1d17d0.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="percpu_macros" data-themes="" data-resource-suffix="" data-rustdoc-version="1.86.0-nightly (99768c80a 2025-01-23)" data-channel="nightly" data-search-js="search-ccb196c1.js" data-settings-js="settings-0f613d39.js" ><script src="../static.files/storage-59e33391.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../percpu_macros/index.html">percpu_<wbr>macros</a><span class="version">0.1.7</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#implementation-details-of-the-def_percpu-macro" title="Implementation details of the `def_percpu` macro">Implementation details of the <code>def_percpu</code> macro</a><ul><li><a href="#core-idea" title="Core idea">Core idea</a></li><li><a href="#how-to-access-the-per-cpu-data" title="How to access the per-CPU data">How to access the per-CPU data</a></li><li><a href="#generated-code" title="Generated code">Generated code</a></li></ul></li></ul><h3><a href="#attributes">Crate Items</a></h3><ul class="block"><li><a href="#attributes" title="Attribute Macros">Attribute Macros</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>percpu_macros</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/percpu_macros/lib.rs.html#1-263">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Macros to define and access a per-CPU data structure.</p>
+<p><strong>DO NOT</strong> use this crate directly. Use the <a href="https://docs.rs/percpu">percpu</a> crate instead.</p>
+<h3 id="implementation-details-of-the-def_percpu-macro"><a class="doc-anchor" href="#implementation-details-of-the-def_percpu-macro">§</a>Implementation details of the <code>def_percpu</code> macro</h3><h4 id="core-idea"><a class="doc-anchor" href="#core-idea">§</a>Core idea</h4>
+<p>The core idea is to collect all per-CPU static variables to a single section (i.e., <code>.percpu</code>), then allocate a
+per-CPU data area, with the size equals to the size of the <code>.percpu</code> section, for each CPU (it can be done
+statically or dynamically), then copy the <code>.percpu</code> section to each per-CPU data area during initialization.</p>
+<p>The address of a per-CPU static variable on a given CPU can be calculated by adding the offset of the variable
+(relative to the section base) to the base address of the per-CPU data area on the CPU.</p>
+<h4 id="how-to-access-the-per-cpu-data"><a class="doc-anchor" href="#how-to-access-the-per-cpu-data">§</a>How to access the per-CPU data</h4>
+<p>To access a per-CPU static variable on a given CPU, three values are needed:</p>
+<ul>
+<li>The base address of the per-CPU data area on the CPU,
+<ul>
+<li>which can be calculated by the base address of the whole per-CPU data area and the CPU ID,</li>
+<li>and then stored in a register, like <code>TPIDR_EL1</code>/<code>TPIDR_EL2</code> on AArch64, or <code>gs</code> on x86_64.</li>
+</ul>
+</li>
+<li>The offset of the per-CPU static variable relative to the per-CPU data area base,
+<ul>
+<li>which can be calculated by assembly notations, like <code>offset symbol</code> on x86_64, or <code>#:abs_g0_nc:symbol</code> on
+AArch64, or <code>%hi(symbol)</code> and <code>%lo(symbol)</code> on RISC-V.</li>
+</ul>
+</li>
+<li>The size of the per-CPU static variable,
+<ul>
+<li>which we actually do not need to know, just give the right type to rust compiler.</li>
+</ul>
+</li>
+</ul>
+<h4 id="generated-code"><a class="doc-anchor" href="#generated-code">§</a>Generated code</h4>
+<p>For each static variable <code>X</code> with type <code>T</code> that is defined with the <code>def_percpu</code> macro, the following items are
+generated:</p>
+<ul>
+<li>
+<p>A static variable <code>__PERCPU_X</code> with type <code>T</code> that stores the per-CPU data.</p>
+<p>This variable is placed in the <code>.percpu</code> section. All attributes of the original static variable, as well as the
+initialization expression, are preserved.</p>
+<p>This variable is never, and should never be, accessed directly. To access the per-CPU data, the offset of the
+variable is, and should be, used.</p>
+</li>
+<li>
+<p>A zero-sized wrapper struct <code>X_WRAPPER</code> that is used to access the per-CPU data.</p>
+<p>Some methods are generated in this struct to access the per-CPU data. For primitive integer types, extra methods
+are generated to accelerate the access.</p>
+</li>
+<li>
+<p>A static variable <code>X</code> of type <code>X_WRAPPER</code> that is used to access the per-CPU data.</p>
+<p>This variable is always generated with the same visibility and attributes as the original static variable.</p>
+</li>
+</ul>
+</div></details><h2 id="attributes" class="section-header">Attribute Macros<a href="#attributes" class="anchor">§</a></h2><dl class="item-table"><dt><a class="attr" href="attr.def_percpu.html" title="attr percpu_macros::def_percpu">def_<wbr>percpu</a></dt><dd>Defines a per-CPU static variable.</dd></dl></section></div></main></body></html>
