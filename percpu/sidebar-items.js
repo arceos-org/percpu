@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"attr":["def_percpu"],"fn":["init","init_percpu_reg","percpu_area_base","percpu_area_num","percpu_area_size","read_percpu_reg","write_percpu_reg"],"static":["EXAMPLE_PERCPU_DATA"],"struct":["EXAMPLE_PERCPU_DATA_WRAPPER"]};
