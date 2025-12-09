@@ -150,7 +150,6 @@ pub fn def_percpu(attr: TokenStream, item: TokenStream) -> TokenStream {
     quote! {
         #[cfg_attr(not(target_os = "macos"), link_section = ".percpu")] // unimplemented on macos
         #(#attrs)*
-        #[allow(static_mut_refs)]
         static mut #inner_symbol_name: #ty = #init_expr;
 
         #[doc = concat!("Wrapper struct for the per-CPU data [`", stringify!(#name), "`]")]

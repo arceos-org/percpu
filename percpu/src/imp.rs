@@ -10,11 +10,11 @@ const fn align_up_64(val: usize) -> usize {
 #[cfg(not(target_os = "none"))]
 static PERCPU_AREA_BASE: spin::once::Once<usize> = spin::once::Once::new();
 
-unsafe extern "C" {
-    unsafe fn _percpu_start();
-    unsafe fn _percpu_end();
-    unsafe fn _percpu_load_start();
-    unsafe fn _percpu_load_end();
+extern "C" {
+    fn _percpu_start();
+    fn _percpu_end();
+    fn _percpu_load_start();
+    fn _percpu_load_end();
 }
 
 /// Returns the number of per-CPU data areas reserved.
