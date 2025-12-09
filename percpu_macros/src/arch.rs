@@ -32,11 +32,16 @@ pub fn gen_symbol_vma(symbol: &Ident) -> proc_macro2::TokenStream {
                 VAR = sym #symbol,
             );
             #[cfg(target_arch = "arm")]
-            ::core::arch::asm!(
-                "ldr {0}, ={VAR}",
-                out(reg) value,
-                VAR = sym #symbol,
-            );
+            {
+                let mut offset: u32;
+                ::core::arch::asm!(
+                    "movw {0}, #:lower16:{VAR}",
+                    "movt {0}, #:upper16:{VAR}",
+                    out(reg) offset,
+                    VAR = sym #symbol,
+                );
+                value = offset as usize;
+            }
             #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
             ::core::arch::asm!(
                 "lui {0}, %hi({VAR})",
@@ -202,7 +207,8 @@ pub fn gen_read_current_raw(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStre
     let arm_asm = quote! {
         ::core::arch::asm!(
             "mrc p15, 0, {0}, c13, c0, 3",
-            "ldr {1}, ={VAR}",
+            "movw {1}, #:lower16:{VAR}",
+            "movt {1}, #:upper16:{VAR}",
             concat!(#arm_op, " {0}, [{0}, {1}]"),
             out(reg) value,
             out(reg) _,
@@ -307,7 +313,8 @@ pub fn gen_write_current_raw(symbol: &Ident, val: &Ident, ty: &Type) -> proc_mac
     let arm_code = quote! {
         ::core::arch::asm!(
             "mrc p15, 0, {0}, c13, c0, 3",
-            "ldr {1}, ={VAR}",
+            "movw {1}, #:lower16:{VAR}",
+            "movt {1}, #:upper16:{VAR}",
             concat!(#arm_op, " {2}, [{0}, {1}]"),
             out(reg) _,
             out(reg) _,
