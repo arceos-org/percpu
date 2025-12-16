@@ -198,28 +198,9 @@ pub fn gen_read_current_raw(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStre
         }
     };
 
-    let arm_op = match ty_str.as_str() {
-        "u8" | "bool" => "ldrb",
-        "u16" => "ldrh",
-        "u32" | "usize" => "ldr",
-        _ => unreachable!(),
-    };
-    let arm_asm = quote! {
-        ::core::arch::asm!(
-            "mrc p15, 0, {0}, c13, c0, 3",
-            "movw {1}, #:lower16:{VAR}",
-            "movt {1}, #:upper16:{VAR}",
-            concat!(#arm_op, " {0}, [{0}, {1}]"),
-            out(reg) value,
-            out(reg) _,
-            VAR = sym #symbol,
-        )
-    };
-
     let rv64_code = gen_code(rv64_asm);
     let la64_code = gen_code(la64_asm);
     let x64_code = gen_code(x64_asm);
-    let arm_code = gen_code(arm_asm);
     macos_unimplemented(quote! {
         #[cfg(target_arch = "riscv64")]
         { #rv64_code }
@@ -227,9 +208,7 @@ pub fn gen_read_current_raw(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStre
         { #la64_code }
         #[cfg(target_arch = "x86_64")]
         { #x64_code }
-        #[cfg(target_arch = "arm")]
-        { #arm_code }
-        #[cfg(not(any(target_arch = "riscv64", target_arch = "loongarch64", target_arch = "x86_64", target_arch = "arm")))]
+        #[cfg(not(any(target_arch = "riscv64", target_arch = "loongarch64", target_arch = "x86_64")))]
         { *self.current_ptr() }
     })
 }
@@ -304,25 +283,6 @@ pub fn gen_write_current_raw(symbol: &Ident, val: &Ident, ty: &Type) -> proc_mac
         ::core::arch::asm!(#x64_asm, in(#x64_reg) #val as #ty_fixup, VAR = sym #symbol)
     };
 
-    let arm_op = match ty_str.as_str() {
-        "u8" | "bool" => "strb",
-        "u16" => "strh",
-        "u32" | "usize" => "str",
-        _ => unreachable!(),
-    };
-    let arm_code = quote! {
-        ::core::arch::asm!(
-            "mrc p15, 0, {0}, c13, c0, 3",
-            "movw {1}, #:lower16:{VAR}",
-            "movt {1}, #:upper16:{VAR}",
-            concat!(#arm_op, " {2}, [{0}, {1}]"),
-            out(reg) _,
-            out(reg) _,
-            in(reg) #val as #ty_fixup,
-            VAR = sym #symbol,
-        );
-    };
-
     macos_unimplemented(quote! {
         #[cfg(target_arch = "riscv64")]
         { #rv64_code }
@@ -330,9 +290,7 @@ pub fn gen_write_current_raw(symbol: &Ident, val: &Ident, ty: &Type) -> proc_mac
         { #la64_code }
         #[cfg(target_arch = "x86_64")]
         { #x64_code }
-        #[cfg(target_arch = "arm")]
-        { #arm_code }
-        #[cfg(not(any(target_arch = "riscv64", target_arch = "loongarch64", target_arch = "x86_64", target_arch = "arm")))]
+        #[cfg(not(any(target_arch = "riscv64", target_arch = "loongarch64", target_arch = "x86_64")))]
         { *(self.current_ptr() as *mut #ty) = #val }
     })
 }
