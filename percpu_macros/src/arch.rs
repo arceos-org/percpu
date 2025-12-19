@@ -24,16 +24,20 @@ pub fn gen_offset(symbol: &Ident) -> proc_macro2::TokenStream {
                 "addi {1}, {1}, %lo(_percpu_load_start)",
                 "sub {0}, {0}, {1}",
             };
+            let riscv_tmp_var = quote! { out(reg) _ , };
             let loongarch64_offset_asm = quote! {
                 "lu12i.w {1}, %abs_hi20(_percpu_load_start)",
                 "ori {1}, {1}, %abs_lo12(_percpu_load_start)",
                 "sub.w {0}, {0}, {1}",
             };
+            let loongarch64_tmp_var = quote! { out(reg) _ , };
         } else {
             let x86_64_offset_asm = quote! {};
             let aarch64_offset_asm = quote! {};
             let riscv_offset_asm = quote! {};
+            let riscv_tmp_var = quote! {};
             let loongarch64_offset_asm = quote! {};
+            let loongarch64_tmp_var = quote! {};
         }
     }
 
@@ -41,7 +45,6 @@ pub fn gen_offset(symbol: &Ident) -> proc_macro2::TokenStream {
     quote! {
         unsafe {
             let value: usize;
-            let tmp: usize;
             #[cfg(target_arch = "x86_64")]
             ::core::arch::asm!(
                 "mov {0:e}, offset {VAR}", // Requires offset <= 0xffff_ffff
@@ -62,7 +65,7 @@ pub fn gen_offset(symbol: &Ident) -> proc_macro2::TokenStream {
                 "addi {0}, {0}, %lo({VAR})", // Requires offset <= 0xffff_ffff
                 #riscv_offset_asm
                 out(reg) value,
-                out(reg) tmp,
+                #riscv_tmp_var
                 VAR = sym #symbol,
             );
             #[cfg(any(target_arch = "loongarch64"))]
@@ -71,7 +74,7 @@ pub fn gen_offset(symbol: &Ident) -> proc_macro2::TokenStream {
                 "ori {0}, {0}, %abs_lo12({VAR})", // Requires offset <= 0xffff_ffff
                 #loongarch64_offset_asm
                 out(reg) value,
-                out(reg) tmp,
+                #loongarch64_tmp_var
                 VAR = sym #symbol,
             );
             value

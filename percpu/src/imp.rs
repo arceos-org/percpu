@@ -98,7 +98,7 @@ pub fn init() -> usize {
 ///
 /// This register is used to hold the per-CPU data base on each CPU.
 pub fn read_percpu_reg() -> usize {
-    let tp;
+    let tp: usize;
     unsafe {
         cfg_if::cfg_if! {
             if #[cfg(target_arch = "x86_64")] {
