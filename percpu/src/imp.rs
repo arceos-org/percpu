@@ -157,9 +157,6 @@ pub unsafe fn write_percpu_reg(tp: usize) {
                         in("edi") ARCH_SET_GS,
                         in("rsi") tp,
                     );
-                    // // SELF_PTR is not initialized yet here, so must write it directly.
-                    // // SAFETY: Here tp lies in the memory area allocated and stored in `PERCPU_AREA_BASE`.
-                    // core::ptr::with_exposed_provenance_mut::<usize>(tp + SELF_PTR.offset()).write(tp);
                 } else if cfg!(target_os = "none") {
                     x86::msr::wrmsr(x86::msr::IA32_GS_BASE, tp as u64);
                 } else {
