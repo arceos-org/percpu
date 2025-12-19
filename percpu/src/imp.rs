@@ -19,7 +19,8 @@ extern "C" {
 
 /// Returns the number of per-CPU data areas reserved.
 pub fn percpu_area_num() -> usize {
-    (_percpu_end as *const () as usize - _percpu_start as *const () as usize) / align_up_64(percpu_area_size())
+    (_percpu_end as *const () as usize - _percpu_start as *const () as usize)
+        / align_up_64(percpu_area_size())
 }
 
 /// Returns the per-CPU data area size for one CPU.
