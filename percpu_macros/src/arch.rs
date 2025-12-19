@@ -14,29 +14,45 @@ fn macos_unimplemented(item: proc_macro2::TokenStream) -> proc_macro2::TokenStre
 
 /// Generate a code block that calculates the offset of the per-CPU variable based on the inner symbol name.
 pub fn gen_offset(symbol: &Ident) -> proc_macro2::TokenStream {
+    // if "non-zero-vma" feature is enabled, we need to subtract _percpu_load_start
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "non-zero-vma")] {
+            let x86_64_offset_asm = quote! { "sub {0:e}, offset _percpu_load_start", };
+            let aarch64_offset_asm = quote! { "sub {0}, #:abs_g0_nc:_percpu_load_start", };
+            let riscv_offset_asm = quote! {
+                "lui {1}, %hi(_percpu_load_start)",
+                "addi {1}, {1}, %lo(_percpu_load_start)",
+                "sub {0}, {0}, {1}",
+            };
+            let loongarch64_offset_asm = quote! {
+                "lu12i.w {1}, %abs_hi20(_percpu_load_start)",
+                "ori {1}, {1}, %abs_lo12(_percpu_load_start)",
+                "sub.w {0}, {0}, {1}",
+            };
+        } else {
+            let x86_64_offset_asm = quote! {};
+            let aarch64_offset_asm = quote! {};
+            let riscv_offset_asm = quote! {};
+            let loongarch64_offset_asm = quote! {};
+        }
+    }
+
     // the outer pair of braces is necessary to make the result an expression
     quote! {
         unsafe {
             let value: usize;
-            // under linux, .percpu section is offset by _percpu_load_start
-            #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+            let tmp: usize;
+            #[cfg(target_arch = "x86_64")]
             ::core::arch::asm!(
                 "mov {0:e}, offset {VAR}", // Requires offset <= 0xffff_ffff
-                "sub {0:e}, offset _percpu_load_start",
+                #x86_64_offset_asm
                 out(reg) value,
                 VAR = sym #symbol,
             );
-            #[cfg(all(target_arch = "x86_64", target_os = "none"))]
-            ::core::arch::asm!(
-                "mov {0:e}, offset {VAR}", // Requires offset <= 0xffff_ffff
-                out(reg) value,
-                VAR = sym #symbol,
-            );
-            #[cfg(all(target_arch = "x86_64", not(any(target_os = "linux", target_os = "none"))))]
-            unimplemented!();
             #[cfg(target_arch = "aarch64")]
             ::core::arch::asm!(
                 "movz {0}, #:abs_g0_nc:{VAR}", // Requires offset <= 0xffff
+                #aarch64_offset_asm
                 out(reg) value,
                 VAR = sym #symbol,
             );
@@ -44,14 +60,18 @@ pub fn gen_offset(symbol: &Ident) -> proc_macro2::TokenStream {
             ::core::arch::asm!(
                 "lui {0}, %hi({VAR})",
                 "addi {0}, {0}, %lo({VAR})", // Requires offset <= 0xffff_ffff
+                #riscv_offset_asm
                 out(reg) value,
+                out(reg) tmp,
                 VAR = sym #symbol,
             );
             #[cfg(any(target_arch = "loongarch64"))]
             ::core::arch::asm!(
                 "lu12i.w {0}, %abs_hi20({VAR})",
                 "ori {0}, {0}, %abs_lo12({VAR})", // Requires offset <= 0xffff_ffff
+                #loongarch64_offset_asm
                 out(reg) value,
+                out(reg) tmp,
                 VAR = sym #symbol,
             );
             value
@@ -71,24 +91,17 @@ pub fn gen_current_ptr(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStream {
     };
     let aarch64_asm = format!("mrs {{}}, {aarch64_tpidr}");
 
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "non-zero-vma")] {
+            let offset = quote! { + (_percpu_load_start as *const () as usize) };
+        } else {
+            let offset = quote! {};
+        }
+    }
+
     macos_unimplemented(quote! {
         let base: usize;
-        #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
-        {
-            // `__PERCPU_SELF_PTR` stores GS_BASE, which is defined in crate `percpu`.
-            // under linux, .percpu section is offset by _percpu_load_start
-            ::core::arch::asm!(
-                "mov {0}, offset __PERCPU_SELF_PTR",
-                "sub {0}, offset _percpu_load_start",
-                "mov {0}, gs:[{0}]",
-                "add {0}, offset {VAR}",
-                "sub {0}, offset _percpu_load_start",
-                out(reg) base,
-                VAR = sym #symbol,
-            );
-            base as *const #ty
-        }
-        #[cfg(all(target_arch = "x86_64", target_os = "none"))]
+        #[cfg(target_arch = "x86_64")]
         {
             // `__PERCPU_SELF_PTR` stores GS_BASE, which is defined in crate `percpu`.
             ::core::arch::asm!(
@@ -99,10 +112,6 @@ pub fn gen_current_ptr(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStream {
             );
             base as *const #ty
         }
-        #[cfg(all(target_arch = "x86_64", not(any(target_os = "linux", target_os = "none"))))]
-        {
-            unimplemented!()
-        }
         #[cfg(not(target_arch = "x86_64"))]
         {
             #[cfg(target_arch = "aarch64")]
@@ -111,7 +120,7 @@ pub fn gen_current_ptr(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStream {
             ::core::arch::asm!("mv {}, gp", out(reg) base);
             #[cfg(any(target_arch = "loongarch64"))]
             ::core::arch::asm!("move {}, $r21", out(reg) base);
-            (base + self.offset()) as *const #ty
+            (base + self.offset() #offset) as *const #ty
         }
     })
 }
@@ -202,9 +211,9 @@ pub fn gen_read_current_raw(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStre
         { #rv64_code }
         #[cfg(target_arch = "loongarch64")]
         { #la64_code }
-        #[cfg(all(target_arch = "x86_64", target_os = "none"))]
+        #[cfg(target_arch = "x86_64")]
         { #x64_code }
-        #[cfg(not(any(target_arch = "riscv64", target_arch = "loongarch64", all(target_arch = "x86_64", target_os = "none"))))]
+        #[cfg(not(any(target_arch = "riscv64", target_arch = "loongarch64", target_arch = "x86_64")))]
         { *self.current_ptr() }
     })
 }
@@ -284,9 +293,9 @@ pub fn gen_write_current_raw(symbol: &Ident, val: &Ident, ty: &Type) -> proc_mac
         { #rv64_code }
         #[cfg(target_arch = "loongarch64")]
         { #la64_code }
-        #[cfg(all(target_arch = "x86_64", target_os = "none"))]
+        #[cfg(target_arch = "x86_64")]
         { #x64_code }
-        #[cfg(not(any(target_arch = "riscv64", target_arch = "loongarch64", all(target_arch = "x86_64", target_os = "none"))))]
+        #[cfg(not(any(target_arch = "riscv64", target_arch = "loongarch64", target_arch = "x86_64")))]
         { *(self.current_ptr() as *mut #ty) = #val }
     })
 }

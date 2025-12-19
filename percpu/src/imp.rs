@@ -63,6 +63,14 @@ pub fn init() -> usize {
         return 0;
     }
 
+    #[cfg(not(feature = "non-zero-vma"))]
+    {
+        assert_eq!(
+            _percpu_load_start as *const () as usize, 0,
+            "The `.percpu` section must be loaded at VMA address 0 when feature \"non-zero-vma\" is disabled"
+        )
+    }
+
     #[cfg(target_os = "linux")]
     {
         // we not load the percpu section in ELF, allocate them here.
@@ -114,7 +122,13 @@ pub fn read_percpu_reg() -> usize {
             }
         }
     }
-    tp
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "non-zero-vma")] {
+            tp + (_percpu_load_start as *const () as usize)
+        } else {
+            tp
+        }
+    }
 }
 
 /// Writes the architecture-specific per-CPU data register.
@@ -125,6 +139,12 @@ pub fn read_percpu_reg() -> usize {
 ///
 /// This function is unsafe because it writes the low-level register directly.
 pub unsafe fn write_percpu_reg(tp: usize) {
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "non-zero-vma")] {
+            let tp = tp - (_percpu_load_start as *const () as usize);
+        }
+    };
+
     unsafe {
         cfg_if::cfg_if! {
             if #[cfg(target_arch = "x86_64")] {
@@ -137,15 +157,15 @@ pub unsafe fn write_percpu_reg(tp: usize) {
                         in("edi") ARCH_SET_GS,
                         in("rsi") tp,
                     );
-                    // SELF_PTR is not initialized yet here, so must write it directly.
-                    // SAFETY: Here tp lies in the memory area allocated and stored in `PERCPU_AREA_BASE`.
-                    core::ptr::with_exposed_provenance_mut::<usize>(tp + SELF_PTR.offset()).write(tp);
+                    // // SELF_PTR is not initialized yet here, so must write it directly.
+                    // // SAFETY: Here tp lies in the memory area allocated and stored in `PERCPU_AREA_BASE`.
+                    // core::ptr::with_exposed_provenance_mut::<usize>(tp + SELF_PTR.offset()).write(tp);
                 } else if cfg!(target_os = "none") {
                     x86::msr::wrmsr(x86::msr::IA32_GS_BASE, tp as u64);
-                    SELF_PTR.write_current_raw(tp);
                 } else {
                     unimplemented!()
                 }
+                SELF_PTR.write_current_raw(tp);
             } else if #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))] {
                 core::arch::asm!("mv gp, {}", in(reg) tp)
             } else if #[cfg(all(target_arch = "aarch64", not(feature = "arm-el2")))] {
