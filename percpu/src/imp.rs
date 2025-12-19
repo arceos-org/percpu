@@ -19,7 +19,7 @@ extern "C" {
 
 /// Returns the number of per-CPU data areas reserved.
 pub fn percpu_area_num() -> usize {
-    (_percpu_end as usize - _percpu_start as usize) / align_up_64(percpu_area_size())
+    (_percpu_end as *const () as usize - _percpu_start as *const () as usize) / align_up_64(percpu_area_size())
 }
 
 /// Returns the per-CPU data area size for one CPU.
@@ -65,7 +65,7 @@ pub fn init() -> usize {
     #[cfg(target_os = "linux")]
     {
         // we not load the percpu section in ELF, allocate them here.
-        let total_size = _percpu_end as usize - _percpu_start as usize;
+        let total_size = _percpu_end as *const () as usize - _percpu_start as *const () as usize;
         let layout = std::alloc::Layout::from_size_align(total_size, 0x1000).unwrap();
         PERCPU_AREA_BASE.call_once(|| unsafe { std::alloc::alloc(layout) as usize });
     }
@@ -136,12 +136,15 @@ pub unsafe fn write_percpu_reg(tp: usize) {
                         in("edi") ARCH_SET_GS,
                         in("rsi") tp,
                     );
+                    // SELF_PTR is not initialized yet here, so must write it directly.
+                    // SAFETY: Here tp lies in the memory area allocated and stored in `PERCPU_AREA_BASE`.
+                    core::ptr::with_exposed_provenance_mut::<usize>(tp + SELF_PTR.offset()).write(tp);
                 } else if cfg!(target_os = "none") {
                     x86::msr::wrmsr(x86::msr::IA32_GS_BASE, tp as u64);
+                    SELF_PTR.write_current_raw(tp);
                 } else {
                     unimplemented!()
                 }
-                SELF_PTR.write_current_raw(tp);
             } else if #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))] {
                 core::arch::asm!("mv gp, {}", in(reg) tp)
             } else if #[cfg(all(target_arch = "aarch64", not(feature = "arm-el2")))] {

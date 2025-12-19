@@ -18,12 +18,22 @@ pub fn gen_offset(symbol: &Ident) -> proc_macro2::TokenStream {
     quote! {
         unsafe {
             let value: usize;
-            #[cfg(target_arch = "x86_64")]
+            // under linux, .percpu section is offset by _percpu_load_start
+            #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+            ::core::arch::asm!(
+                "mov {0:e}, offset {VAR}", // Requires offset <= 0xffff_ffff
+                "sub {0:e}, offset _percpu_load_start",
+                out(reg) value,
+                VAR = sym #symbol,
+            );
+            #[cfg(all(target_arch = "x86_64", target_os = "none"))]
             ::core::arch::asm!(
                 "mov {0:e}, offset {VAR}", // Requires offset <= 0xffff_ffff
                 out(reg) value,
                 VAR = sym #symbol,
             );
+            #[cfg(all(target_arch = "x86_64", not(any(target_os = "linux", target_os = "none"))))]
+            unimplemented!();
             #[cfg(target_arch = "aarch64")]
             ::core::arch::asm!(
                 "movz {0}, #:abs_g0_nc:{VAR}", // Requires offset <= 0xffff
@@ -63,7 +73,22 @@ pub fn gen_current_ptr(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStream {
 
     macos_unimplemented(quote! {
         let base: usize;
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+        {
+            // `__PERCPU_SELF_PTR` stores GS_BASE, which is defined in crate `percpu`.
+            // under linux, .percpu section is offset by _percpu_load_start
+            ::core::arch::asm!(
+                "mov {0}, offset __PERCPU_SELF_PTR",
+                "sub {0}, offset _percpu_load_start",
+                "mov {0}, gs:[{0}]",
+                "add {0}, offset {VAR}",
+                "sub {0}, offset _percpu_load_start",
+                out(reg) base,
+                VAR = sym #symbol,
+            );
+            base as *const #ty
+        }
+        #[cfg(all(target_arch = "x86_64", target_os = "none"))]
         {
             // `__PERCPU_SELF_PTR` stores GS_BASE, which is defined in crate `percpu`.
             ::core::arch::asm!(
@@ -73,6 +98,10 @@ pub fn gen_current_ptr(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStream {
                 VAR = sym #symbol,
             );
             base as *const #ty
+        }
+        #[cfg(all(target_arch = "x86_64", not(any(target_os = "linux", target_os = "none"))))]
+        {
+            unimplemented!()
         }
         #[cfg(not(target_arch = "x86_64"))]
         {
@@ -173,9 +202,9 @@ pub fn gen_read_current_raw(symbol: &Ident, ty: &Type) -> proc_macro2::TokenStre
         { #rv64_code }
         #[cfg(target_arch = "loongarch64")]
         { #la64_code }
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", target_os = "none"))]
         { #x64_code }
-        #[cfg(not(any(target_arch = "riscv64", target_arch = "loongarch64", target_arch = "x86_64")))]
+        #[cfg(not(any(target_arch = "riscv64", target_arch = "loongarch64", all(target_arch = "x86_64", target_os = "none"))))]
         { *self.current_ptr() }
     })
 }
@@ -255,9 +284,9 @@ pub fn gen_write_current_raw(symbol: &Ident, val: &Ident, ty: &Type) -> proc_mac
         { #rv64_code }
         #[cfg(target_arch = "loongarch64")]
         { #la64_code }
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", target_os = "none"))]
         { #x64_code }
-        #[cfg(not(any(target_arch = "riscv64", target_arch = "loongarch64", target_arch = "x86_64")))]
+        #[cfg(not(any(target_arch = "riscv64", target_arch = "loongarch64", all(target_arch = "x86_64", target_os = "none"))))]
         { *(self.current_ptr() as *mut #ty) = #val }
     })
 }
