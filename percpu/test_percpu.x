@@ -4,7 +4,7 @@
  * okay as it's never actually used.
  *
  * This is ONLY necessary for test_percpu.x, normal kernels SHOULD place percpu
- * sections in their linker scripts with 0x0 VMA and no NOLOAD attribute as 
+ * sections in their linker scripts with 0x0 VMA and no NOLOAD attribute as
  * before. See the linker script snippet used in ArceOS as an example:
  *
  *  . = ALIGN(4K);
