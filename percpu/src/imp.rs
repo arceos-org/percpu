@@ -36,7 +36,7 @@ pub fn percpu_area_size() -> usize {
 pub fn percpu_area_base(cpu_id: usize) -> usize {
     cfg_if::cfg_if! {
         if #[cfg(target_os = "none")] {
-            let base = _percpu_start as usize;
+            let base = _percpu_start as *const () as usize;
         } else {
             let base = *PERCPU_AREA_BASE.get().unwrap();
         }
@@ -85,7 +85,7 @@ pub fn init() -> usize {
     for i in 1..num {
         let secondary_base = percpu_area_base(i);
         #[cfg(target_os = "none")]
-        assert!(secondary_base + size <= _percpu_end as usize);
+        assert!(secondary_base + size <= _percpu_end as *const () as usize);
         // copy per-cpu data of the primary CPU to other CPUs.
         unsafe {
             core::ptr::copy_nonoverlapping(base as *const u8, secondary_base as *mut u8, size);
