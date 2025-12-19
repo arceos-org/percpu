@@ -17,14 +17,23 @@ pub fn gen_offset(symbol: &Ident) -> proc_macro2::TokenStream {
     // if "non-zero-vma" feature is enabled, we need to subtract _percpu_load_start
     cfg_if::cfg_if! {
         if #[cfg(feature = "non-zero-vma")] {
+            // Require _percpu_load_start <= 0xffff_ffff
             let x86_64_offset_asm = quote! { "sub {0:e}, offset _percpu_load_start", };
-            let aarch64_offset_asm = quote! { "sub {0}, #:abs_g0_nc:_percpu_load_start", };
+            // Require _percpu_load_start <= 0xffff_ffff
+            let aarch64_offset_asm = quote! {
+                "adrp {1}, _percpu_load_start",
+                "add {1}, {1}, #:lo12:_percpu_load_start",
+                "sub {0}, {0}, {1}",
+            };
+            let aarch64_tmp_var = quote! { out(reg) _ , };
+            // Require _percpu_load_start <= 0xffff_ffff
             let riscv_offset_asm = quote! {
                 "lui {1}, %hi(_percpu_load_start)",
                 "addi {1}, {1}, %lo(_percpu_load_start)",
                 "sub {0}, {0}, {1}",
             };
             let riscv_tmp_var = quote! { out(reg) _ , };
+            // Require _percpu_load_start <= 0xffff_ffff
             let loongarch64_offset_asm = quote! {
                 "lu12i.w {1}, %abs_hi20(_percpu_load_start)",
                 "ori {1}, {1}, %abs_lo12(_percpu_load_start)",
@@ -34,6 +43,7 @@ pub fn gen_offset(symbol: &Ident) -> proc_macro2::TokenStream {
         } else {
             let x86_64_offset_asm = quote! {};
             let aarch64_offset_asm = quote! {};
+            let aarch64_tmp_var = quote! {};
             let riscv_offset_asm = quote! {};
             let riscv_tmp_var = quote! {};
             let loongarch64_offset_asm = quote! {};
@@ -57,6 +67,7 @@ pub fn gen_offset(symbol: &Ident) -> proc_macro2::TokenStream {
                 "movz {0}, #:abs_g0_nc:{VAR}", // Requires offset <= 0xffff
                 #aarch64_offset_asm
                 out(reg) value,
+                #aarch64_tmp_var
                 VAR = sym #symbol,
             );
             #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
