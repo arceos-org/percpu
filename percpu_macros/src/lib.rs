@@ -162,7 +162,7 @@ pub fn def_percpu(attr: TokenStream, item: TokenStream) -> TokenStream {
         impl #struct_name {
             /// Returns the virtual memory address of this per-CPU static
             /// variable in the `.percpu` section.
-            /// 
+            ///
             /// It's same across all CPUs, and also the same as `offset` if the
             /// "non-zero-vma" feature is not enabled.
             #[inline]
