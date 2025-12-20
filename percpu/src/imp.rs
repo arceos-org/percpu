@@ -26,8 +26,8 @@ pub fn percpu_area_num() -> usize {
 /// Returns the per-CPU data area size for one CPU.
 pub fn percpu_area_size() -> usize {
     // It seems that `_percpu_load_start as usize - _percpu_load_end as usize` will result in more instructions.
-    use percpu_macros::percpu_symbol_offset;
-    percpu_symbol_offset!(_percpu_load_end) - percpu_symbol_offset!(_percpu_load_start)
+    use percpu_macros::percpu_symbol_vma;
+    percpu_symbol_vma!(_percpu_load_end) - percpu_symbol_vma!(_percpu_load_start)
 }
 
 /// Returns the base address of the per-CPU data area on the given CPU.
