@@ -1,5 +1,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use percpu_macros::percpu_symbol_vma;
+
 static IS_INIT: AtomicBool = AtomicBool::new(false);
 
 const fn align_up_64(val: usize) -> usize {
@@ -26,7 +28,6 @@ pub fn percpu_area_num() -> usize {
 /// Returns the per-CPU data area size for one CPU.
 pub fn percpu_area_size() -> usize {
     // It seems that `_percpu_load_start as usize - _percpu_load_end as usize` will result in more instructions.
-    use percpu_macros::percpu_symbol_vma;
     percpu_symbol_vma!(_percpu_load_end) - percpu_symbol_vma!(_percpu_load_start)
 }
 
@@ -65,8 +66,11 @@ pub fn init() -> usize {
 
     #[cfg(not(feature = "non-zero-vma"))]
     {
+        // `_percpu_load_start as *const () as usize` cannot be used here because
+        // rust will assume a `*const ()` is a valid pointer and will not be 0,
+        // causing unexpected `0 != 0` assertion failure.
         assert_eq!(
-            _percpu_load_start as *const () as usize, 0,
+            percpu_symbol_vma!(_percpu_load_start), 0,
             "The `.percpu` section must be loaded at VMA address 0 when feature \"non-zero-vma\" is disabled"
         )
     }
