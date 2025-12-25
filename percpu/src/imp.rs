@@ -15,10 +15,14 @@ static PERCPU_AREA_BASE: spin::once::Once<usize> = spin::once::Once::new();
 extern "C" {
     fn _percpu_start();
     fn _percpu_end();
-    // WARNING: `_percpu_load_start/_end` (i.e. symbols in the `.percpu` section
-    // must be used with `percpu_symbol_vma!` macro to get their VMA addresses.
-    // casting them directly to `usize` may lead to unexpected results, and
-    // link-time errors!
+    // WARNING: `_percpu_load_start`/`_percpu_load_end` (i.e. symbols in the
+    // `.percpu` section) must be used with `percpu_symbol_vma!` macro to get
+    // their VMA addresses. Casting them directly to `usize` may lead to
+    // unexpected results, including:
+    // - Rust assuming they are valid pointers and optimizing code based on that
+    //   assumption (they are non-zero), causing unexpected runtime errors;
+    // - Link-time errors because they are too far away from the program counter
+    //.  (when Rust uses PC-relative addressing).
     //
     // See https://github.com/arceos-org/percpu/issues/18 for more details.
     fn _percpu_load_start();
