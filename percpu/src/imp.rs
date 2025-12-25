@@ -15,6 +15,12 @@ static PERCPU_AREA_BASE: spin::once::Once<usize> = spin::once::Once::new();
 extern "C" {
     fn _percpu_start();
     fn _percpu_end();
+    // WARNING: `_percpu_load_start/_end` (i.e. symbols in the `.percpu` section
+    // must be used with `percpu_symbol_vma!` macro to get their VMA addresses.
+    // casting them directly to `usize` may lead to unexpected results, and
+    // link-time errors!
+    //
+    // See https://github.com/arceos-org/percpu/issues/18 for more details.
     fn _percpu_load_start();
     fn _percpu_load_end();
 }
@@ -27,7 +33,6 @@ pub fn percpu_area_num() -> usize {
 
 /// Returns the per-CPU data area size for one CPU.
 pub fn percpu_area_size() -> usize {
-    // It seems that `_percpu_load_start as usize - _percpu_load_end as usize` will result in more instructions.
     percpu_symbol_vma!(_percpu_load_end) - percpu_symbol_vma!(_percpu_load_start)
 }
 
@@ -130,7 +135,7 @@ pub fn read_percpu_reg() -> usize {
     }
     cfg_if::cfg_if! {
         if #[cfg(feature = "non-zero-vma")] {
-            tp + (_percpu_load_start as *const () as usize)
+            tp + percpu_symbol_vma!(_percpu_load_start)
         } else {
             tp
         }
@@ -147,7 +152,7 @@ pub fn read_percpu_reg() -> usize {
 pub unsafe fn write_percpu_reg(tp: usize) {
     cfg_if::cfg_if! {
         if #[cfg(feature = "non-zero-vma")] {
-            let tp = tp - (_percpu_load_start as *const () as usize);
+            let tp = tp - percpu_symbol_vma!(_percpu_load_start);
         }
     };
 
