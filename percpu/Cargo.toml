@@ -28,6 +28,9 @@ arm-el2 = ["percpu_macros/arm-el2"]
 # on Linux user-space. May reduce performance slightly.
 non-zero-vma = ["percpu_macros/non-zero-vma"]
 
+# Allow setting custom percpu area base address. This may 
+custom-base = ["percpu_macros/custom-base"]
+
 [dependencies]
 cfg-if = "1.0"
 kernel_guard = { version = "0.1", optional = true }
@@ -36,5 +39,5 @@ percpu_macros = { path = "../percpu_macros", version = "0.2.2" }
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86 = "0.52"
 
-[target.'cfg(not(target_os = "none"))'.dependencies]
-spin = "0.9"
+[target.'cfg(any(feature = "custom-base", not(target_os = "none")))'.dependencies]
+spin = { version = "0.10", default-features = false, features = ["once"]}

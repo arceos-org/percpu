@@ -5,22 +5,22 @@ use percpu::*;
 // Initial value is unsupported for testing.
 
 #[def_percpu]
-static BOOL: bool = false;
+static BOOL: bool = true;
 
 #[def_percpu]
-static U8: u8 = 0;
+static U8: u8 = 1;
 
 #[def_percpu]
-static U16: u16 = 0;
+static U16: u16 = 2;
 
 #[def_percpu]
-static U32: u32 = 0;
+static U32: u32 = 3;
 
 #[def_percpu]
-static U64: u64 = 0;
+static U64: u64 = 4;
 
 #[def_percpu]
-static USIZE: usize = 0;
+static USIZE: usize = 5;
 
 struct Struct {
     foo: usize,
@@ -28,17 +28,30 @@ struct Struct {
 }
 
 #[def_percpu]
-static STRUCT: Struct = Struct { foo: 0, bar: 0 };
+static STRUCT: Struct = Struct { foo: 6, bar: 7 };
 
-#[cfg(all(target_os = "linux", feature = "non-zero-vma"))]
+#[cfg(all(
+    target_os = "linux",
+    any(feature = "non-zero-vma", feature = "sp-naive")
+))]
 #[test]
 fn test_percpu() {
     println!("feature = \"sp-naive\": {}", cfg!(feature = "sp-naive"));
+    println!(
+        "feature = \"custom-base\": {}",
+        cfg!(feature = "custom-base")
+    );
 
     #[cfg(feature = "sp-naive")]
-    let base = 0;
+    let base = {
+        #[cfg(feature = "custom-base")]
+        init(std::ptr::null(), 1);
+        #[cfg(not(feature = "custom-base"))]
+        init();
+        0
+    };
 
-    #[cfg(not(feature = "sp-naive"))]
+    #[cfg(all(not(feature = "sp-naive"), not(feature = "custom-base")))]
     let base = {
         assert_eq!(init(), 4);
         let area_base_0 = percpu_area_base(0);
@@ -48,6 +61,23 @@ fn test_percpu() {
         println!("per-CPU area base (calculated) = {:#x}", area_base_0);
         println!("per-CPU area base (read) = {:#x}", base);
         println!("per-CPU area size = {}", percpu_area_size());
+        base
+    };
+
+    #[cfg(all(not(feature = "sp-naive"), feature = "custom-base"))]
+    let base = {
+        let size = percpu_area_size_for_cpus(4);
+        let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
+        let base = unsafe { std::alloc::alloc(layout) as usize };
+
+        assert_eq!(init(base as *const (), 4), 4);
+        init_percpu_reg(0);
+
+        println!(
+            "allocated custom per-CPU data area at {:#x}, layout = {:#?}",
+            base, layout
+        );
+
         base
     };
 
@@ -69,6 +99,36 @@ fn test_percpu() {
         assert_eq!(base + USIZE.offset(), USIZE.current_ptr() as usize);
         assert_eq!(base + STRUCT.offset(), STRUCT.current_ptr() as usize);
     }
+
+    BOOL.reset_to_init();
+    U8.reset_to_init();
+    U16.reset_to_init();
+    U32.reset_to_init();
+    U64.reset_to_init();
+    USIZE.reset_to_init();
+    STRUCT.reset_to_init();
+
+    println!("bool initial value: {}", BOOL.read_current());
+    println!("u8 initial value: {}", U8.read_current());
+    println!("u16 initial value: {:#x}", U16.read_current());
+    println!("u32 initial value: {:#x}", U32.read_current());
+    println!("u64 initial value: {:#x}", U64.read_current());
+    println!("usize initial value: {:#x}", USIZE.read_current());
+    STRUCT.with_current(|s| {
+        println!("struct.foo initial value: {:#x}", s.foo);
+        println!("struct.bar initial value: {}", s.bar);
+    });
+
+    assert!(BOOL.read_current());
+    assert_eq!(U8.read_current(), 1);
+    assert_eq!(U16.read_current(), 2);
+    assert_eq!(U32.read_current(), 3);
+    assert_eq!(U64.read_current(), 4);
+    assert_eq!(USIZE.read_current(), 5);
+    STRUCT.with_current(|s| {
+        assert_eq!(s.foo, 6);
+        assert_eq!(s.bar, 7);
+    });
 
     BOOL.write_current(true);
     U8.write_current(123);

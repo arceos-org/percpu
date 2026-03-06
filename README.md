@@ -48,7 +48,16 @@ to access the corresponding field.
 static CPU_ID: usize = 0;
 
 // initialize per-CPU data areas.
+#[cfg(not(feature = "custom-base"))]
 percpu::init();
+#[cfg(feature = "custom-base")]
+{
+    let cpu_count = 4;
+    let size = percpu::percpu_area_size_for_cpus(cpu_count);
+    let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
+    let base = unsafe { std::alloc::alloc(layout) as usize };
+    percpu::init(base as *const (), cpu_count);
+}
 // set the thread pointer register to the per-CPU data area 0.
 percpu::init_percpu_reg(0);
 
@@ -75,17 +84,58 @@ _percpu_end = _percpu_start + SIZEOF(.percpu);
 
 ## Cargo Features
 
-- `sp-naive`: For **single-core** use. In this case, each per-CPU data is
-  just a global variable, architecture-specific thread pointer register is
-  not used.
-- `preempt`: For **preemptible** system use. In this case, we need to disable
-  preemption when accessing per-CPU data. Otherwise, the data may be corrupted
-  when it's being accessing and the current thread happens to be preempted.
+### Feature Modes
+
+The crate supports different working modes through feature combinations:
+
+| Mode | Features | `init()` Signature | Memory | VMA | Bare Metal | Linux |
+|------|----------|-------------------|--------|-----|------------|-------|
+| Default | (none) | `init() -> usize` | Linker `.percpu` | Must be 0 | ✅ | ❌ |
+| sp-naive | `sp-naive` | `init(base?, count?)` | Global vars | N/A | ✅ | ✅ |
+| non-zero-vma | `non-zero-vma` | `init() -> usize` | Linker `.percpu` | Any | ✅ | ✅ |
+| custom-base | `custom-base` | `init(base, count) -> usize` | User-provided | Must be 0 | ✅ | ❌ |
+| custom-base+non-zero-vma | `custom-base,non-zero-vma` | `init(base, count) -> usize` | User-provided | Any | ✅ | ✅ |
+
+### Feature Descriptions
+
+- `sp-naive`: For **single-core** use. Each per-CPU data is just a global variable,
+  architecture-specific thread pointer register is not used.
+- `preempt`: For **preemptible** system use. Disables preemption when accessing
+  per-CPU data to prevent corruption.
 - `arm-el2`: For **ARM system** running at **EL2** use (e.g. hypervisors).
-  In this case, we use `TPIDR_EL2` instead of `TPIDR_EL1`
-  to store the base address of per-CPU data area.
-- `non-zero-vma`: Allow the per-CPU data area (section `.percpu`) to be placed
-  at a **non-zero virtual memory address**. By default, the section is placed
-  at virtual address `0x0` to simplify the calculation of offsets, however, it's
-  not allowed by some linkers/loaders. Without this feature enabled, it's likely
-  impossible to use this crate in user-space programs.
+  Uses `TPIDR_EL2` instead of `TPIDR_EL1`.
+- `non-zero-vma`: Allows the `.percpu` section to be placed at a **non-zero VMA**.
+  Required for Linux user-space and some linkers that don't support VMA 0.
+- `custom-base`: Allows **user-defined memory allocation** for per-CPU data areas.
+  Useful for dynamic CPU count or custom memory requirements.
+
+### sp-naive Feature Interactions
+
+When `sp-naive` is enabled with other features:
+- **`custom-base`**: The `init(base, count)` signature is available but parameters are ignored.
+- **`non-zero-vma`**: The feature is accepted but has no effect (no `.percpu` section is used).
+
+This allows for a consistent API regardless of feature combination.
+
+### Environment Differences
+
+| Aspect | Bare Metal (`target_os = "none"`) | Linux |
+|--------|-----------------------------------|-------|
+| Default mode (VMA 0) | ✅ Works | ❌ Linker rejects VMA 0 |
+| `non-zero-vma` | Optional, slight overhead | Required for multi-CPU modes |
+| `custom-base` alone | ✅ User memory at VMA 0 | ❌ Symbols still need non-zero VMA |
+| Per-CPU register | Direct MSR/assembly | `arch_prctl` syscall (x86_64) |
+
+### Why Each Mode Exists
+
+1. **Default mode**: Optimal for bare metal kernels with static CPU count.
+   Zero-offset addressing provides best performance.
+
+2. **`non-zero-vma` mode**: Required for Linux user-space testing and
+   linkers that don't support VMA 0. Slight performance overhead.
+
+3. **`custom-base` mode**: For dynamic CPU count, custom memory allocators,
+   or hot-pluggable CPUs. Uses VMA 0 for optimal performance.
+
+4. **`sp-naive` mode**: Zero overhead for single-core systems. Per-CPU data
+   becomes regular global variables.

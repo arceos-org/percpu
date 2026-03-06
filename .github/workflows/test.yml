@@ -17,8 +17,14 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
 
-      - name: Run tests (sp-naive,non-zero-vma)
-        run: cargo test --target x86_64-unknown-linux-gnu --features "sp-naive,non-zero-vma" -- --nocapture
+      - name: Run tests (sp-naive)
+        run: cargo test --target x86_64-unknown-linux-gnu --features "sp-naive" -- --nocapture
+
+      - name: Run tests (sp-naive,custom-base)
+        run: cargo test --target x86_64-unknown-linux-gnu --features "sp-naive,custom-base" -- --nocapture
 
       - name: Run tests (non-zero-vma)
         run: cargo test --target x86_64-unknown-linux-gnu --features "non-zero-vma" -- --nocapture
+
+      - name: Run tests (custom-base,non-zero-vma)
+        run: cargo test --target x86_64-unknown-linux-gnu --features "custom-base,non-zero-vma" -- --nocapture

@@ -2,6 +2,11 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use percpu_macros::percpu_symbol_vma;
 
+/// When the `custom-base` feature is disabled, this atomic is used to mark
+/// whether the per-CPU data areas have been initialized.
+///
+/// When the `custom-base` feature is enabled, this atomic is used as a mutex
+/// and is cleared after the initialization to enable re-initialization.
 static IS_INIT: AtomicBool = AtomicBool::new(false);
 
 const fn align_up_64(val: usize) -> usize {
@@ -9,7 +14,9 @@ const fn align_up_64(val: usize) -> usize {
     (val + SIZE_64BIT - 1) & !(SIZE_64BIT - 1)
 }
 
-#[cfg(not(target_os = "none"))]
+/// The custom per-CPU data area base address. We only employ `AtomicUsize`'s
+/// interior mutability and atomicity here.
+#[cfg(any(feature = "custom-base", not(target_os = "none")))]
 static PERCPU_AREA_BASE: spin::once::Once<usize> = spin::once::Once::new();
 
 extern "C" {
@@ -29,7 +36,7 @@ extern "C" {
     fn _percpu_load_end();
 }
 
-/// Returns the number of per-CPU data areas reserved.
+/// Returns the number of per-CPU data areas reserved in the `.percpu` section.
 pub fn percpu_area_num() -> usize {
     (_percpu_end as *const () as usize - _percpu_start as *const () as usize)
         / align_up_64(percpu_area_size())
@@ -40,32 +47,37 @@ pub fn percpu_area_size() -> usize {
     percpu_symbol_vma!(_percpu_load_end) - percpu_symbol_vma!(_percpu_load_start)
 }
 
+/// Returns the per-CPU data area size for the given number of CPUs.
+#[cfg(feature = "custom-base")]
+pub fn percpu_area_size_for_cpus(cpu_count: usize) -> usize {
+    cpu_count * align_up_64(percpu_area_size())
+}
+
 /// Returns the base address of the per-CPU data area on the given CPU.
 ///
 /// if `cpu_id` is 0, it returns the base address of all per-CPU data areas.
 pub fn percpu_area_base(cpu_id: usize) -> usize {
     cfg_if::cfg_if! {
-        if #[cfg(target_os = "none")] {
-            let base = _percpu_start as *const () as usize;
-        } else {
+        if #[cfg(any(feature = "custom-base", not(target_os = "none")))] {
             let base = *PERCPU_AREA_BASE.get().unwrap();
+        } else {
+            let base = _percpu_start as *const () as usize;
         }
     }
     base + cpu_id * align_up_64(percpu_area_size())
 }
 
-/// Initialize all per-CPU data areas.
-///
-/// The number of areas is determined by the following formula:
-///
-/// ```text
-/// (percpu_section_size / align_up(percpu_area_size, 64)
-/// ```
+/// Initialize all per-CPU data areas. Note that the per-CPU data areas are
+/// initialized only when feature "custom-base" is disabled and running on bare
+/// metal.
 ///
 /// Returns the number of areas initialized. If this function has been called
 /// before, it does nothing and returns 0.
-pub fn init() -> usize {
-    // avoid re-initialization.
+pub fn init(
+    #[cfg(feature = "custom-base")] custom_base: *const (),
+    #[cfg(feature = "custom-base")] cpu_count: usize,
+) -> usize {
+    // Avoid re-initialization.
     if IS_INIT
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
@@ -73,38 +85,57 @@ pub fn init() -> usize {
         return 0;
     }
 
+    // Check if the `.percpu` section is loaded at VMA address 0 when feature "non-zero-vma" is disabled.
+    //
+    // `_percpu_load_start as *const () as usize` cannot be used here because
+    // rust will assume a `*const ()` is a valid pointer and will not be 0,
+    // causing unexpected `0 != 0` assertion failure.
     #[cfg(not(feature = "non-zero-vma"))]
     {
-        // `_percpu_load_start as *const () as usize` cannot be used here because
-        // rust will assume a `*const ()` is a valid pointer and will not be 0,
-        // causing unexpected `0 != 0` assertion failure.
         assert_eq!(
             percpu_symbol_vma!(_percpu_load_start), 0,
             "The `.percpu` section must be loaded at VMA address 0 when feature \"non-zero-vma\" is disabled"
         )
     }
 
-    #[cfg(target_os = "linux")]
-    {
-        // we not load the percpu section in ELF, allocate them here.
+    // When feature "custom-base" is disabled and running on Linux, we allocate the per-CPU data area here.
+    #[cfg(all(not(target_os = "none"), not(feature = "custom-base")))]
+    let custom_base = {
         let total_size = _percpu_end as *const () as usize - _percpu_start as *const () as usize;
         let layout = std::alloc::Layout::from_size_align(total_size, 0x1000).unwrap();
-        PERCPU_AREA_BASE.call_once(|| unsafe { std::alloc::alloc(layout) as usize });
-    }
+        let base = unsafe { std::alloc::alloc(layout) as usize };
+        base as *const ()
+    };
 
-    let base = percpu_area_base(0);
-    let size = percpu_area_size();
-    let num = percpu_area_num();
-    for i in 1..num {
-        let secondary_base = percpu_area_base(i);
-        #[cfg(target_os = "none")]
-        assert!(secondary_base + size <= _percpu_end as *const () as usize);
+    // Store the per-CPU data area base address when feature "custom-base" is enabled or not running on none.
+    #[cfg(any(feature = "custom-base", not(target_os = "none")))]
+    PERCPU_AREA_BASE.call_once(|| custom_base as _);
+
+    // Get the number of per-CPU data areas when feature "custom-base" is disabled.
+    #[cfg(not(feature = "custom-base"))]
+    let cpu_count = percpu_area_num();
+
+    // Copy per-cpu data only when feature "custom-base" is disabled and running on none.
+    #[cfg(all(target_os = "none", not(feature = "custom-base")))]
+    {
+        let base = percpu_area_base(0);
+        let size = percpu_area_size();
         // copy per-cpu data of the primary CPU to other CPUs.
-        unsafe {
-            core::ptr::copy_nonoverlapping(base as *const u8, secondary_base as *mut u8, size);
+        for i in 1..cpu_count {
+            let secondary_base = percpu_area_base(i);
+            assert!(secondary_base + size <= _percpu_end as *const () as usize);
+
+            unsafe {
+                core::ptr::copy_nonoverlapping(base as *const u8, secondary_base as *mut u8, size);
+            }
         }
     }
-    num
+
+    // Enable re-initialization when feature "custom-base" is enabled.
+    #[cfg(feature = "custom-base")]
+    IS_INIT.store(false, Ordering::Release);
+
+    cpu_count
 }
 
 /// Reads the architecture-specific per-CPU data register.

@@ -49,3 +49,15 @@ jobs:
 
       - name: Build (non-zero-vma)
         run: cargo build --target ${{ matrix.target }} --features "preempt,arm-el2,non-zero-vma"
+
+      - name: Clippy (custom-base)
+        run: cargo clippy --target ${{ matrix.target }} --features "custom-base"
+
+      - name: Build (custom-base)
+        run: cargo build --target ${{ matrix.target }} --features "custom-base"
+
+      - name: Clippy (custom-base,non-zero-vma)
+        run: cargo clippy --target ${{ matrix.target }} --features "custom-base,non-zero-vma"
+
+      - name: Build (custom-base,non-zero-vma)
+        run: cargo build --target ${{ matrix.target }} --features "custom-base,non-zero-vma"
