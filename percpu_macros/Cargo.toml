@@ -28,6 +28,7 @@ arm-el2 = []
 # on Linux user-space. May reduce performance slightly.
 non-zero-vma = []
 
+# Allow setting custom percpu area base address.
 custom-base = []
 
 [dependencies]

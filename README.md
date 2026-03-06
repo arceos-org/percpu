@@ -52,11 +52,15 @@ static CPU_ID: usize = 0;
 percpu::init();
 #[cfg(feature = "custom-base")]
 {
+    // when `custom-base` feature is enabled, you need to allocate the per-CPU
+    // data area manually.
     let cpu_count = 4;
     let size = percpu::percpu_area_size_for_cpus(cpu_count);
     let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
     let base = unsafe { std::alloc::alloc(layout) as usize };
     percpu::init(base as *const (), cpu_count);
+    // and set the initial value manually.
+    CPU_ID.reset_to_init();
 }
 // set the thread pointer register to the per-CPU data area 0.
 percpu::init_percpu_reg(0);
@@ -82,60 +86,49 @@ _percpu_end = _percpu_start + SIZEOF(.percpu);
 . = _percpu_end;
 ```
 
-## Cargo Features
+## Notes
 
-### Feature Modes
+### Working Modes
 
 The crate supports different working modes through feature combinations:
 
-| Mode | Features | `init()` Signature | Memory | VMA | Bare Metal | Linux |
-|------|----------|-------------------|--------|-----|------------|-------|
-| Default | (none) | `init() -> usize` | Linker `.percpu` | Must be 0 | ✅ | ❌ |
-| sp-naive | `sp-naive` | `init(base?, count?)` | Global vars | N/A | ✅ | ✅ |
-| non-zero-vma | `non-zero-vma` | `init() -> usize` | Linker `.percpu` | Any | ✅ | ✅ |
-| custom-base | `custom-base` | `init(base, count) -> usize` | User-provided | Must be 0 | ✅ | ❌ |
-| custom-base+non-zero-vma | `custom-base,non-zero-vma` | `init(base, count) -> usize` | User-provided | Any | ✅ | ✅ |
+| Features                         | Per-CPU Data Area | `.percpu` VMA | Use case                                      | Linux |
+|----------------------------------|-------------------|---------------|-----------------------------------------------|-------|
+| (none)                           | `.percpu` section | Must be 0     | Multi-threaded bare metal                     | ❌     |
+| `sp-naive`                       | Global vars       | N/A           | Single-threaded bare metal / Linux user-space | ✅     |
+| `non-zero-vma`                   | `.percpu` section | Any           | Multi-threaded Linux user-space               | ✅     |
+| `custom-base`                    | Custom memory     | Must be 0     | PIC bare metal / Dynamic CPU detection        | ❌     |
+| `custom-base` & `non-zero-vma` | Custom memory     | Any           | PIC Linux user-space                          | ✅     |
 
-### Feature Descriptions
+### Cargo Features
 
-- `sp-naive`: For **single-core** use. Each per-CPU data is just a global variable,
-  architecture-specific thread pointer register is not used.
+These features control the working mode of the crate:
+
+- `sp-naive`: Force **single-core** mode. Each per-CPU data is just a global variable,
+  architecture-specific thread pointer register is not used. This feature **disables** `non-zero-vma` and `custom-base`.
+- `non-zero-vma`: Allows the `.percpu` section to be placed at a **non-zero VMA**.
+  Required for Linux user-space programs as some linkers that don't support VMA 0.
+- `custom-base`: Allows **user-defined memory allocation** for per-CPU data areas.
+  Useful for dynamic CPU count or custom memory requirements.
+
+These features further control the behavior of the crate:
+
 - `preempt`: For **preemptible** system use. Disables preemption when accessing
   per-CPU data to prevent corruption.
 - `arm-el2`: For **ARM system** running at **EL2** use (e.g. hypervisors).
   Uses `TPIDR_EL2` instead of `TPIDR_EL1`.
-- `non-zero-vma`: Allows the `.percpu` section to be placed at a **non-zero VMA**.
-  Required for Linux user-space and some linkers that don't support VMA 0.
-- `custom-base`: Allows **user-defined memory allocation** for per-CPU data areas.
-  Useful for dynamic CPU count or custom memory requirements.
 
-### sp-naive Feature Interactions
+### Default values
 
-When `sp-naive` is enabled with other features:
-- **`custom-base`**: The `init(base, count)` signature is available but parameters are ignored.
-- **`non-zero-vma`**: The feature is accepted but has no effect (no `.percpu` section is used).
+The default values of per-CPU static variables **ARE NOT** assigned when:
+- `custom-base` feature is enabled, or
+- not running on bare metal.
 
-This allows for a consistent API regardless of feature combination.
+In these cases, you need to set the initial value manually.
 
-### Environment Differences
+```rust,no_run
+#[def_percpu]
+static CPU_ID: usize = 42;
 
-| Aspect | Bare Metal (`target_os = "none"`) | Linux |
-|--------|-----------------------------------|-------|
-| Default mode (VMA 0) | ✅ Works | ❌ Linker rejects VMA 0 |
-| `non-zero-vma` | Optional, slight overhead | Required for multi-CPU modes |
-| `custom-base` alone | ✅ User memory at VMA 0 | ❌ Symbols still need non-zero VMA |
-| Per-CPU register | Direct MSR/assembly | `arch_prctl` syscall (x86_64) |
-
-### Why Each Mode Exists
-
-1. **Default mode**: Optimal for bare metal kernels with static CPU count.
-   Zero-offset addressing provides best performance.
-
-2. **`non-zero-vma` mode**: Required for Linux user-space testing and
-   linkers that don't support VMA 0. Slight performance overhead.
-
-3. **`custom-base` mode**: For dynamic CPU count, custom memory allocators,
-   or hot-pluggable CPUs. Uses VMA 0 for optimal performance.
-
-4. **`sp-naive` mode**: Zero overhead for single-core systems. Per-CPU data
-   becomes regular global variables.
+CPU_ID.reset_to_init();
+```
