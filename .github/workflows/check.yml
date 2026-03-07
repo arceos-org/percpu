@@ -14,6 +14,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        mode_features:
+          - ""
+          - "sp-naive"
+          - "non-zero-vma"
+          - "custom-base"
+          - "custom-base,non-zero-vma"
+        arm_el2: ["", "arm-el2"]
+        preempt: ["", "preempt"]
         target:
           - x86_64-unknown-linux-gnu
           - x86_64-unknown-none
@@ -38,26 +46,8 @@ jobs:
       - name: Check code format
         run: cargo fmt --all -- --check
 
-      - name: Clippy (zero-vma)
-        run: cargo clippy --target ${{ matrix.target }} --features "preempt,arm-el2"
+      - name: Build ("${{ matrix.mode_features }},${{ matrix.arm_el2 }},${{ matrix.preempt }}")
+        run: cargo build --target ${{ matrix.target }} --features "${{ matrix.mode_features }},${{ matrix.arm_el2 }},${{ matrix.preempt }}"
 
-      - name: Build (zero-vma)
-        run: cargo build --target ${{ matrix.target }} --features "preempt,arm-el2"
-
-      - name: Clippy (non-zero-vma)
-        run: cargo clippy --target ${{ matrix.target }} --features "preempt,arm-el2,non-zero-vma"
-
-      - name: Build (non-zero-vma)
-        run: cargo build --target ${{ matrix.target }} --features "preempt,arm-el2,non-zero-vma"
-
-      - name: Clippy (custom-base)
-        run: cargo clippy --target ${{ matrix.target }} --features "custom-base"
-
-      - name: Build (custom-base)
-        run: cargo build --target ${{ matrix.target }} --features "custom-base"
-
-      - name: Clippy (custom-base,non-zero-vma)
-        run: cargo clippy --target ${{ matrix.target }} --features "custom-base,non-zero-vma"
-
-      - name: Build (custom-base,non-zero-vma)
-        run: cargo build --target ${{ matrix.target }} --features "custom-base,non-zero-vma"
+      - name: Clippy ("${{ matrix.mode_features }},${{ matrix.arm_el2 }},${{ matrix.preempt }}")
+        run: cargo clippy --target ${{ matrix.target }} --features "${{ matrix.mode_features }},${{ matrix.arm_el2 }},${{ matrix.preempt }}"
