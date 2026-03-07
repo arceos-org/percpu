@@ -127,6 +127,8 @@ The default values of per-CPU static variables **ARE NOT** assigned when:
 In these cases, you need to set the initial value manually.
 
 ```rust,no_run
+use percpu::def_percpu;
+
 #[def_percpu]
 static CPU_ID: usize = 42;
 
