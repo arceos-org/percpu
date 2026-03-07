@@ -92,12 +92,12 @@ _percpu_end = _percpu_start + SIZEOF(.percpu);
 
 The crate supports different working modes through feature combinations:
 
-| Features                         | Per-CPU Data Area | `.percpu` VMA | Use case                                      | Linux |
-|----------------------------------|-------------------|---------------|-----------------------------------------------|-------|
-| (none)                           | `.percpu` section | Must be 0     | Multi-threaded bare metal                     | ❌     |
-| `sp-naive`                       | Global vars       | N/A           | Single-threaded bare metal / Linux user-space | ✅     |
-| `non-zero-vma`                   | `.percpu` section | Any           | Multi-threaded Linux user-space               | ✅     |
-| `custom-base`                    | Custom memory     | Must be 0     | PIC bare metal / Dynamic CPU detection        | ❌     |
+| Features                       | Per-CPU Data Area | `.percpu` VMA | Use case                                      | Linux |
+|--------------------------------|-------------------|---------------|-----------------------------------------------|-------|
+| (none)                         | `.percpu` section | Must be 0     | Multi-threaded bare metal                     | ❌     |
+| `sp-naive`                     | Global vars       | N/A           | Single-threaded bare metal / Linux user-space | ✅     |
+| `non-zero-vma`                 | `.percpu` section | Any           | Multi-threaded Linux user-space               | ✅     |
+| `custom-base`                  | Custom memory     | Must be 0     | PIC bare metal / Dynamic CPU detection        | ❌     |
 | `custom-base` & `non-zero-vma` | Custom memory     | Any           | PIC Linux user-space                          | ✅     |
 
 ### Cargo Features
@@ -105,11 +105,13 @@ The crate supports different working modes through feature combinations:
 These features control the working mode of the crate:
 
 - `sp-naive`: Force **single-core** mode. Each per-CPU data is just a global variable,
-  architecture-specific thread pointer register is not used. This feature **disables** `non-zero-vma` and `custom-base`.
+  architecture-specific thread pointer register is not used. This feature makes
+  `non-zero-vma` and `custom-base` ineffective.
 - `non-zero-vma`: Allows the `.percpu` section to be placed at a **non-zero VMA**.
   Required for Linux user-space programs as some linkers that don't support VMA 0.
 - `custom-base`: Allows **user-defined memory allocation** for per-CPU data areas.
-  Useful for dynamic CPU count or custom memory requirements.
+  Useful for dynamic CPU count or custom memory requirements. This feature
+  **changes the signature** of `init()` function.
 
 These features further control the behavior of the crate:
 
