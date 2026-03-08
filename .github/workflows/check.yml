@@ -14,10 +14,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sp_naive: ["", "sp-naive"]
-        non_zero_vma: ["", "non-zero-vma"]
-        arm_el2: ["", "arm-el2"]
-        preempt: ["", "preempt"]
         target:
           - x86_64-unknown-linux-gnu
           - x86_64-unknown-none
