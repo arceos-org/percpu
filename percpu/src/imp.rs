@@ -2,8 +2,8 @@ use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use percpu_macros::percpu_symbol_vma;
 
-/// This atomic is used to mark whether the per-CPU data areas have been initialized.
-/// It is cleared after initialization to enable re-initialization when using `init()`.
+/// This atomic tracks whether the per-CPU data areas is being initialized.
+/// It is cleared after initialization to enable re-initialization.
 static IS_INIT: AtomicBool = AtomicBool::new(false);
 
 const fn align_up_64(val: usize) -> usize {
@@ -52,7 +52,7 @@ pub fn percpu_area_size() -> usize {
 
 /// Returns the expected layout for the per-CPU data area for the given number
 /// of CPUs.
-/// 
+///
 /// # Arguments
 ///
 /// - `cpu_count`: Number of CPUs.
@@ -62,7 +62,7 @@ pub fn percpu_area_size() -> usize {
 /// The expected layout for the per-CPU data area.
 pub fn percpu_area_layout_expected(cpu_count: usize) -> core::alloc::Layout {
     let size = cpu_count * align_up_64(percpu_area_size());
-    const ALIGNMENT: usize = 0x1000;
+    const ALIGNMENT: usize = 0x40;
     core::alloc::Layout::from_size_align(size, ALIGNMENT).unwrap()
 }
 

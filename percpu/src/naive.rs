@@ -11,7 +11,7 @@ pub fn percpu_area_size() -> usize {
 ///
 /// Always returns `0` for "sp-naive" mode since no per-CPU memory areas are needed.
 pub fn percpu_area_layout_expected(_cpu_count: usize) -> core::alloc::Layout {
-    core::alloc::Layout::from_size_align(0, 0x1000).unwrap()
+    core::alloc::Layout::from_size_align(0, 0x40).unwrap()
 }
 
 /// Returns the number of per-CPU data areas reserved.
