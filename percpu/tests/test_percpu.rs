@@ -1,4 +1,5 @@
-#![cfg(not(target_os = "macos"))]
+#![cfg(target_os = "linux")]
+#![cfg(any(feature = "non-zero-vma", feature = "sp-naive"))]
 
 use percpu::*;
 
@@ -30,54 +31,7 @@ struct Struct {
 #[def_percpu]
 static STRUCT: Struct = Struct { foo: 6, bar: 7 };
 
-#[cfg(all(
-    target_os = "linux",
-    any(feature = "non-zero-vma", feature = "sp-naive")
-))]
-#[test]
-fn test_percpu() {
-    println!("feature = \"sp-naive\": {}", cfg!(feature = "sp-naive"));
-    println!(
-        "feature = \"custom-base\": {}",
-        cfg!(feature = "custom-base")
-    );
-
-    #[cfg(feature = "sp-naive")]
-    let base = {
-        init_static();
-        0
-    };
-
-    #[cfg(all(not(feature = "sp-naive"), not(feature = "custom-base")))]
-    let base = {
-        assert_eq!(init_static(), 4);
-        let area_base_0 = percpu_area_base(0);
-        unsafe { write_percpu_reg(area_base_0) };
-
-        let base = read_percpu_reg();
-        println!("per-CPU area base (calculated) = {:#x}", area_base_0);
-        println!("per-CPU area base (read) = {:#x}", base);
-        println!("per-CPU area size = {}", percpu_area_size());
-        base
-    };
-
-    #[cfg(all(not(feature = "sp-naive"), feature = "custom-base"))]
-    let base = {
-        let size = percpu_area_size_for_cpus(4);
-        let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
-        let base = unsafe { std::alloc::alloc(layout) as usize };
-
-        assert_eq!(init_dynamic(base as *const (), 4), 4);
-        init_percpu_reg(0);
-
-        println!(
-            "allocated custom per-CPU data area at {:#x}, layout = {:#?}",
-            base, layout
-        );
-
-        base
-    };
-
+fn tester_local_ptr(base: usize) {
     println!("bool offset: {:#x}", BOOL.offset());
     println!("u8 offset: {:#x}", U8.offset());
     println!("u16 offset: {:#x}", U16.offset());
@@ -96,15 +50,9 @@ fn test_percpu() {
         assert_eq!(base + USIZE.offset(), USIZE.current_ptr() as usize);
         assert_eq!(base + STRUCT.offset(), STRUCT.current_ptr() as usize);
     }
+}
 
-    BOOL.reset_to_init();
-    U8.reset_to_init();
-    U16.reset_to_init();
-    U32.reset_to_init();
-    U64.reset_to_init();
-    USIZE.reset_to_init();
-    STRUCT.reset_to_init();
-
+fn tester_local_is_init() {
     println!("bool initial value: {}", BOOL.read_current());
     println!("u8 initial value: {}", U8.read_current());
     println!("u16 initial value: {:#x}", U16.read_current());
@@ -115,6 +63,7 @@ fn test_percpu() {
         println!("struct.foo initial value: {:#x}", s.foo);
         println!("struct.bar initial value: {}", s.bar);
     });
+    println!();
 
     assert!(BOOL.read_current());
     assert_eq!(U8.read_current(), 1);
@@ -126,7 +75,9 @@ fn test_percpu() {
         assert_eq!(s.foo, 6);
         assert_eq!(s.bar, 7);
     });
+}
 
+fn tester_local_rw() {
     BOOL.write_current(true);
     U8.write_current(123);
     U16.write_current(0xabcd);
@@ -159,67 +110,216 @@ fn test_percpu() {
         assert_eq!(s.bar, 100);
     });
 
-    #[cfg(not(feature = "sp-naive"))]
-    test_remote_access();
+    println!();
 }
 
-#[cfg(all(
-    target_os = "linux",
-    not(feature = "sp-naive"),
-    feature = "non-zero-vma"
-))]
-fn test_remote_access() {
-    // test remote write
-    unsafe {
-        *BOOL.remote_ref_mut_raw(1) = false;
-        *U8.remote_ref_mut_raw(1) = 222;
-        *U16.remote_ref_mut_raw(1) = 0x1234;
-        *U32.remote_ref_mut_raw(1) = 0xf00d_f00d;
-        *U64.remote_ref_mut_raw(1) = 0xfeed_feed_feed_feed;
-        *USIZE.remote_ref_mut_raw(1) = 0x0000_ffff;
+fn tester_reset_to_init() {
+    BOOL.reset_to_init();
+    U8.reset_to_init();
+    U16.reset_to_init();
+    U32.reset_to_init();
+    U64.reset_to_init();
+    USIZE.reset_to_init();
+    STRUCT.reset_to_init();
+}
 
-        *STRUCT.remote_ref_mut_raw(1) = Struct {
-            foo: 0x6666,
-            bar: 200,
+#[cfg(not(feature = "sp-naive"))]
+fn tester_remote_is_init(remote_id: usize) {
+    unsafe {
+        println!(
+            "bool initial value on CPU {}: {}",
+            remote_id,
+            *BOOL.remote_ptr(remote_id)
+        );
+        println!(
+            "u8 initial value on CPU {}: {}",
+            remote_id,
+            *U8.remote_ptr(remote_id)
+        );
+        println!(
+            "u16 initial value on CPU {}: {:#x}",
+            remote_id,
+            *U16.remote_ptr(remote_id)
+        );
+        println!(
+            "u32 initial value on CPU {}: {:#x}",
+            remote_id,
+            *U32.remote_ptr(remote_id)
+        );
+        println!(
+            "u64 initial value on CPU {}: {:#x}",
+            remote_id,
+            *U64.remote_ptr(remote_id)
+        );
+        println!(
+            "usize initial value on CPU {}: {:#x}",
+            remote_id,
+            *USIZE.remote_ptr(remote_id)
+        );
+        let remote_struct = STRUCT.remote_ptr(remote_id);
+        println!(
+            "struct.foo initial value on CPU {}: {:#x}",
+            remote_id,
+            (*remote_struct).foo
+        );
+        println!(
+            "struct.bar initial value on CPU {}: {}",
+            remote_id,
+            (*remote_struct).bar
+        );
+        println!();
+
+        assert!(*BOOL.remote_ptr(remote_id));
+        assert_eq!(*U8.remote_ptr(remote_id), 1);
+        assert_eq!(*U16.remote_ptr(remote_id), 2);
+        assert_eq!(*U32.remote_ptr(remote_id), 3);
+        assert_eq!(*U64.remote_ptr(remote_id), 4);
+        assert_eq!(*USIZE.remote_ptr(remote_id), 5);
+        let remote_struct = STRUCT.remote_ptr(remote_id);
+        assert_eq!((*remote_struct).foo, 6);
+        assert_eq!((*remote_struct).bar, 7);
+    }
+}
+
+#[cfg(not(feature = "sp-naive"))]
+fn tester_remote_rw(remote_id: usize) {
+    unsafe {
+        *BOOL.remote_ref_mut_raw(remote_id) = false;
+        *U8.remote_ref_mut_raw(remote_id) = 222;
+        *U16.remote_ref_mut_raw(remote_id) = 0x1234;
+        *U32.remote_ref_mut_raw(remote_id) = 0xf00d_f00d;
+        *U64.remote_ref_mut_raw(remote_id) = 0xfeed_feed_feed_feed;
+        *USIZE.remote_ref_mut_raw(remote_id) = 0x0000_ffff;
+        *STRUCT.remote_ref_mut_raw(remote_id) = Struct {
+            foo: 0x2333,
+            bar: 100,
         };
+
+        println!(
+            "bool value on CPU {}: {}",
+            remote_id,
+            *BOOL.remote_ptr(remote_id)
+        );
+        println!(
+            "u8 value on CPU {}: {}",
+            remote_id,
+            *U8.remote_ptr(remote_id)
+        );
+        println!(
+            "u16 value on CPU {}: {:#x}",
+            remote_id,
+            *U16.remote_ptr(remote_id)
+        );
+        println!(
+            "u32 value on CPU {}: {:#x}",
+            remote_id,
+            *U32.remote_ptr(remote_id)
+        );
+        println!(
+            "u64 value on CPU {}: {:#x}",
+            remote_id,
+            *U64.remote_ptr(remote_id)
+        );
+        println!(
+            "usize value on CPU {}: {:#x}",
+            remote_id,
+            *USIZE.remote_ptr(remote_id)
+        );
+        let remote_struct = STRUCT.remote_ptr(remote_id);
+        println!(
+            "struct.foo value on CPU {}: {:#x}",
+            remote_id,
+            (*remote_struct).foo
+        );
+        println!(
+            "struct.bar value on CPU {}: {}",
+            remote_id,
+            (*remote_struct).bar
+        );
+        println!();
+
+        assert!(!*BOOL.remote_ptr(remote_id));
+        assert_eq!(*U8.remote_ptr(remote_id), 222);
+        assert_eq!(*U16.remote_ptr(remote_id), 0x1234);
+        assert_eq!(*U32.remote_ptr(remote_id), 0xf00d_f00d);
+        assert_eq!(*U64.remote_ptr(remote_id), 0xfeed_feed_feed_feed);
+        assert_eq!(*USIZE.remote_ptr(remote_id), 0x0000_ffff);
+        let remote_struct = STRUCT.remote_ptr(remote_id);
+        assert_eq!((*remote_struct).foo, 0x2333);
+        assert_eq!((*remote_struct).bar, 100);
     }
+}
 
-    // test remote read
-    unsafe {
-        assert!(!*BOOL.remote_ptr(1));
-        assert_eq!(*U8.remote_ptr(1), 222);
-        assert_eq!(*U16.remote_ptr(1), 0x1234);
-        assert_eq!(*U32.remote_ptr(1), 0xf00d_f00d);
-        assert_eq!(*U64.remote_ptr(1), 0xfeed_feed_feed_feed);
-        assert_eq!(*USIZE.remote_ptr(1), 0x0000_ffff);
+fn test_percpu_local(base: usize) {
+    tester_local_ptr(base);
+    tester_local_is_init();
+    tester_local_rw();
+    tester_reset_to_init();
+    tester_local_is_init();
+}
 
-        let s = STRUCT.remote_ref_raw(1);
-        assert_eq!(s.foo, 0x6666);
-        assert_eq!(s.bar, 200);
-    }
+#[cfg(not(feature = "sp-naive"))]
+fn test_percpu_remote(remote_id: usize) {
+    tester_remote_is_init(remote_id);
+    tester_remote_rw(remote_id);
+}
 
-    // test read on another CPU
-    unsafe { write_percpu_reg(percpu_area_base(1)) }; // we are now on CPU 1
+#[cfg(feature = "sp-naive")]
+#[test]
+fn test_percpu_sp_naive() {
+    println!("Testing single-threaded mode (sp-naive)...");
 
-    println!();
-    println!("bool value on CPU 1: {}", BOOL.read_current());
-    println!("u8 value on CPU 1: {}", U8.read_current());
-    println!("u16 value on CPU 1: {:#x}", U16.read_current());
-    println!("u32 value on CPU 1: {:#x}", U32.read_current());
-    println!("u64 value on CPU 1: {:#x}", U64.read_current());
-    println!("usize value on CPU 1: {:#x}", USIZE.read_current());
+    init_static();
+    init_percpu_reg(0);
 
-    assert!(!BOOL.read_current());
-    assert_eq!(U8.read_current(), 222);
-    assert_eq!(U16.read_current(), 0x1234);
-    assert_eq!(U32.read_current(), 0xf00d_f00d);
-    assert_eq!(U64.read_current(), 0xfeed_feed_feed_feed);
-    assert_eq!(USIZE.read_current(), 0x0000_ffff);
+    test_percpu_local(0);
+}
 
-    STRUCT.with_current(|s| {
-        println!("struct.foo value on CPU 1: {:#x}", s.foo);
-        println!("struct.bar value on CPU 1: {}", s.bar);
-        assert_eq!(s.foo, 0x6666);
-        assert_eq!(s.bar, 200);
-    });
+#[cfg(all(not(feature = "sp-naive"), not(feature = "custom-base")))]
+#[test]
+fn test_percpu_default() {
+    println!("Testing multi-threaded mode (default)...");
+
+    assert_eq!(init_static(), 4);
+    init_percpu_reg(0);
+
+    let base_from_reg = read_percpu_reg();
+    let base_calculated = percpu_area_base(0);
+    assert_eq!(base_from_reg, base_calculated);
+
+    println!("per-CPU area base (calculated) = {:#x}", base_calculated);
+    println!("per-CPU area base (read) = {:#x}", base_from_reg);
+    println!("per-CPU area size = {}", percpu_area_size());
+
+    test_percpu_local(base_from_reg);
+    test_percpu_remote(1);
+    test_percpu_remote(2);
+    test_percpu_remote(3);
+}
+
+#[cfg(all(feature = "custom-base", not(feature = "sp-naive")))]
+#[test]
+fn test_percpu_custom_base() {
+    println!("Testing multi-threaded mode (custom-base)...");
+
+    let size = percpu_area_size_for_cpus(4);
+    let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
+    let base = unsafe { std::alloc::alloc(layout) as usize };
+
+    assert_eq!(init_dynamic(base as *const (), 4), 4);
+    init_percpu_reg(0);
+
+    let base_from_reg = read_percpu_reg();
+    let base_calculated = percpu_area_base(0);
+    assert_eq!(base_from_reg, base);
+    assert_eq!(base_calculated, base);
+
+    println!("per-CPU area base (calculated) = {:#x}", base_calculated);
+    println!("per-CPU area base (read) = {:#x}", base_from_reg);
+    println!("per-CPU area size = {}", percpu_area_size());
+
+    test_percpu_local(base);
+    test_percpu_remote(1);
+    test_percpu_remote(2);
+    test_percpu_remote(3);
 }

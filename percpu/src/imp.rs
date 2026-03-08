@@ -67,6 +67,36 @@ pub fn percpu_area_base(cpu_id: usize) -> usize {
     base + cpu_id * align_up_64(percpu_area_size())
 }
 
+/// Check if the `.percpu` section is loaded at VMA address 0 when feature "non-zero-vma" is disabled.
+fn validate_percpu_vma() {
+    // `_percpu_load_start as *const () as usize` cannot be used here because
+    // rust will assume a `*const ()` is a valid pointer and will not be 0,
+    // causing unexpected `0 != 0` assertion failure.
+    #[cfg(not(feature = "non-zero-vma"))]
+    {
+        assert_eq!(
+            percpu_symbol_vma!(_percpu_load_start), 0,
+            "The `.percpu` section must be loaded at VMA address 0 when feature \"non-zero-vma\" is disabled"
+        )
+    }
+}
+
+fn copy_percpu_region<T: Iterator<Item = usize>>(source: *const (), dest_ids: T) {
+    println!("copying per-CPU data from {:#?}", source);
+    let u8_source = source as *const u8;
+    println!("read from source: {:#x}", unsafe { *u8_source });
+
+    let size = percpu_area_size();
+
+    for dest_id in dest_ids {
+        let dest_base = percpu_area_base(dest_id);
+        println!("copying per-CPU data to {:#x}", dest_base);
+        unsafe {
+            core::ptr::copy_nonoverlapping(source as *const u8, dest_base as *mut u8, size);
+        }
+    }
+}
+
 /// Initialize per-CPU data areas using the `.percpu` section.
 ///
 /// This function is for multi-core static mode (default mode). The per-CPU data
@@ -87,18 +117,7 @@ pub fn init_static() -> usize {
         return 0;
     }
 
-    // Check if the `.percpu` section is loaded at VMA address 0 when feature "non-zero-vma" is disabled.
-    //
-    // `_percpu_load_start as *const () as usize` cannot be used here because
-    // rust will assume a `*const ()` is a valid pointer and will not be 0,
-    // causing unexpected `0 != 0` assertion failure.
-    #[cfg(not(feature = "non-zero-vma"))]
-    {
-        assert_eq!(
-            percpu_symbol_vma!(_percpu_load_start), 0,
-            "The `.percpu` section must be loaded at VMA address 0 when feature \"non-zero-vma\" is disabled"
-        )
-    }
+    validate_percpu_vma();
 
     // When running on Linux, we allocate the per-CPU data area here.
     #[cfg(not(target_os = "none"))]
@@ -107,25 +126,25 @@ pub fn init_static() -> usize {
         let layout = std::alloc::Layout::from_size_align(total_size, 0x1000).unwrap();
         let base = unsafe { std::alloc::alloc(layout) as usize };
         PERCPU_AREA_BASE.call_once(|| base);
+
+        println!("allocated per-CPU data area at {:#x}", base);
+
+        println!(
+            "_percpu_start: {:#?}, _percpu_end: {:#?}",
+            _percpu_start as *const (), _percpu_end as *const ()
+        );
+
+        // Copy per-cpu data of the primary CPU from the `.percpu` section.
+        copy_percpu_region(_percpu_start as *const (), 0..=0);
+
+        println!("copied per-CPU data of the primary CPU from the `.percpu` section");
     }
 
     // Get the number of per-CPU data areas.
     let cpu_count = percpu_area_num();
 
-    // Copy per-cpu data of the primary CPU to other CPUs (bare metal only).
-    #[cfg(target_os = "none")]
-    {
-        let base = percpu_area_base(0);
-        let size = percpu_area_size();
-        for i in 1..cpu_count {
-            let secondary_base = percpu_area_base(i);
-            assert!(secondary_base + size <= _percpu_end as *const () as usize);
-
-            unsafe {
-                core::ptr::copy_nonoverlapping(base as *const u8, secondary_base as *mut u8, size);
-            }
-        }
-    }
+    // Copy per-cpu data of the primary CPU to other CPUs.
+    copy_percpu_region(percpu_area_base(0) as *const (), 1..cpu_count);
 
     cpu_count
 }
@@ -151,17 +170,11 @@ pub fn init_dynamic(base: *const (), cpu_count: usize) -> usize {
         return 0;
     }
 
-    // Check if the `.percpu` section is loaded at VMA address 0 when feature "non-zero-vma" is disabled.
-    #[cfg(not(feature = "non-zero-vma"))]
-    {
-        assert_eq!(
-            percpu_symbol_vma!(_percpu_load_start), 0,
-            "The `.percpu` section must be loaded at VMA address 0 when feature \"non-zero-vma\" is disabled"
-        )
-    }
+    validate_percpu_vma();
 
-    // Store the user-provided base address.
     PERCPU_AREA_BASE.call_once(|| base as _);
+
+    copy_percpu_region(_percpu_start as *const (), 0..cpu_count);
 
     // Enable re-initialization for custom-base mode.
     IS_INIT.store(false, Ordering::Release);

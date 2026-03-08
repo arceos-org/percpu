@@ -48,9 +48,9 @@ to access the corresponding field.
 static CPU_ID: usize = 0;
 
 // Initialize per-CPU data areas.
-#[cfg(not(feature = "custom-base"))]
+#[cfg(any(feature = "sp-naive", not(feature = "custom-base")))]
 percpu::init_static();
-#[cfg(feature = "custom-base")]
+#[cfg(all(not(feature = "sp-naive"), feature = "custom-base"))]
 {
     // When `custom-base` feature is enabled, you need to allocate the per-CPU
     // data area manually.
@@ -90,17 +90,17 @@ _percpu_end = _percpu_start + SIZEOF(.percpu);
 
 ### Working Modes
 
-The crate supports three working modes through feature combinations:
+The crate supports three working modes through combination of features `sp-naive` and `custom-base`:
 
-| Mode | Feature | Per-CPU Data Area | `.percpu` VMA | Init Function | Use case |
-|------|---------|-------------------|---------------|---------------|----------|
-| Single-core | `sp-naive` | Global vars | N/A | `init_static()` | Single-threaded bare metal / Linux |
-| Multi-core static | (none) | `.percpu` section | Must be 0 | `init_static()` | Multi-threaded bare metal |
-| Multi-core dynamic | `custom-base` | Custom memory | Must be 0 | `init_dynamic()` | PIC bare metal / Dynamic CPU count |
+| Mode               | Feature       | Per-CPU Data Area | `.percpu` VMA | Init Function    | Use case                           |
+|--------------------|---------------|-------------------|---------------|------------------|------------------------------------|
+| Single-core        | `sp-naive`    | Global vars       | N/A           | `init_static()`  | Single-threaded bare metal / Linux |
+| Multi-core static  | (none)        | `.percpu` section | Must be 0     | `init_static()`  | Multi-threaded bare metal          |
+| Multi-core dynamic | `custom-base` | Custom memory     | Must be 0     | `init_dynamic()` | PIC bare metal / Dynamic CPU count |
 
-The `non-zero-vma` feature can be combined with any mode to allow the `.percpu` section to be placed at a non-zero VMA address.
+`sp-naive` disables `custom-base`, i.e., `sp-naive` + `custom-base` = `sp-naive`.
 
-### Cargo Features
+### Features List
 
 **Mode features** (select one):
 
@@ -110,23 +110,6 @@ The `non-zero-vma` feature can be combined with any mode to allow the `.percpu` 
 
 **Auxiliary features** (can be combined with any mode):
 
-- `non-zero-vma`: Allows the `.percpu` section to be placed at a **non-zero VMA**. Required for Linux user-space programs as some linkers don't support VMA 0.
+- `non-zero-vma`: Allows the `.percpu` section to be placed at a **non-zero VMA**. Required for Linux user-space programs as some linkers don't support VMA 0. `sp-naive` does not need `non-zero-vma` as it uses global variables.
 - `preempt`: For **preemptible** system use. Disables preemption when accessing per-CPU data to prevent corruption.
 - `arm-el2`: For **ARM system** running at **EL2** use (e.g. hypervisors). Uses `TPIDR_EL2` instead of `TPIDR_EL1`.
-
-### Default values
-
-The default values of per-CPU static variables **ARE NOT** assigned when:
-- `custom-base` feature is enabled, or
-- not running on bare metal.
-
-In these cases, you need to set the initial value manually.
-
-```rust,no_run
-use percpu::def_percpu;
-
-#[def_percpu]
-static CPU_ID: usize = 42;
-
-CPU_ID.reset_to_init();
-```
