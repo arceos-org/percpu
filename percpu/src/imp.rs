@@ -114,7 +114,6 @@ pub fn init_static() -> usize {
 
     validate_percpu_vma();
 
-
     // Get the number of per-CPU data areas.
     let cpu_count = percpu_area_num();
 
