@@ -38,7 +38,7 @@ extern "C" {
 /// of one per-CPU data area. The section size should be reserved in the linker
 /// script with enough space for all CPUs.
 pub fn percpu_area_num() -> usize {
-    (_percpu_end as *const () as usize - _percpu_start as *const () as usize)
+    (_percpu_end as *mut u8 as usize - _percpu_start as *mut u8 as usize)
         / align_up_64(percpu_area_size())
 }
 
@@ -50,20 +50,20 @@ pub fn percpu_area_size() -> usize {
     percpu_symbol_vma!(_percpu_load_end) - percpu_symbol_vma!(_percpu_load_start)
 }
 
-/// Returns the total memory size required for per-CPU data areas for the given
-/// number of CPUs.
-///
-/// This is useful when using [`init()`] to allocate memory dynamically.
-///
+/// Returns the expected layout for the per-CPU data area for the given number
+/// of CPUs.
+/// 
 /// # Arguments
 ///
 /// - `cpu_count`: Number of CPUs.
 ///
 /// # Returns
 ///
-/// The total size in bytes needed to store per-CPU data for all CPUs.
-pub fn percpu_area_size_for_cpus(cpu_count: usize) -> usize {
-    cpu_count * align_up_64(percpu_area_size())
+/// The expected layout for the per-CPU data area.
+pub fn percpu_area_layout_expected(cpu_count: usize) -> core::alloc::Layout {
+    let size = cpu_count * align_up_64(percpu_area_size());
+    const ALIGNMENT: usize = 0x1000;
+    core::alloc::Layout::from_size_align(size, ALIGNMENT).unwrap()
 }
 
 fn percpu_area_base_nolock(cpu_id: usize) -> usize {
@@ -97,8 +97,8 @@ pub fn percpu_area_base(cpu_id: usize) -> usize {
 
 /// Check if the `.percpu` section is loaded at VMA address 0 when feature "non-zero-vma" is disabled.
 fn validate_percpu_vma() {
-    // `_percpu_load_start as *const () as usize` cannot be used here because
-    // rust will assume a `*const ()` is a valid pointer and will not be 0,
+    // `_percpu_load_start as *mut u8 as usize` cannot be used here because
+    // rust will assume a `*mut u8` is a valid pointer and will not be 0,
     // causing unexpected `0 != 0` assertion failure.
     #[cfg(not(feature = "non-zero-vma"))]
     {
@@ -111,7 +111,7 @@ fn validate_percpu_vma() {
 
 /// Copies the per-CPU data from the source to the per-CPU data areas of the
 /// given CPUs.
-fn copy_percpu_region<T: Iterator<Item = usize>>(source: *const (), dest_ids: T) {
+fn copy_percpu_region<T: Iterator<Item = usize>>(source: *mut u8, dest_ids: T) {
     let size = percpu_area_size();
 
     for dest_id in dest_ids {
@@ -122,7 +122,7 @@ fn copy_percpu_region<T: Iterator<Item = usize>>(source: *const (), dest_ids: T)
     }
 }
 
-fn init_inner(base: *const (), cpu_count: usize, do_not_copy_to_primary: bool) -> usize {
+fn init_inner(base: *mut u8, cpu_count: usize, do_not_copy_to_primary: bool) -> usize {
     // Avoid re-initialization.
     if IS_INIT
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -140,7 +140,7 @@ fn init_inner(base: *const (), cpu_count: usize, do_not_copy_to_primary: bool) -
     // Copy the per-CPU data from the `.percpu` section to the per-CPU areas of
     // all CPUs.
     copy_percpu_region(
-        _percpu_start as *const (),
+        _percpu_start as *mut u8,
         if do_not_copy_to_primary {
             1..cpu_count
         } else {
@@ -169,13 +169,13 @@ fn init_inner(base: *const (), cpu_count: usize, do_not_copy_to_primary: bool) -
 ///
 /// The number of per-CPU areas initialized (i.e., `percpu_area_num()`).
 pub fn init_in_place() -> usize {
-    init_inner(_percpu_start as *const (), percpu_area_num(), true)
+    init_inner(_percpu_start as *mut u8, percpu_area_num(), true)
 }
 
 /// Initialize per-CPU data areas with user-provided memory.
 ///
 /// The caller is responsible for allocating memory for the per-CPU data areas.
-/// Use [`percpu_area_size_for_cpus()`] to calculate the required memory size.
+/// Use [`percpu_area_layout_expected()`] to calculate the required memory size.
 /// The allocated memory should be aligned to at least 64 bytes (cache line size),
 /// and preferably to 4KiB (page size) for better performance.
 ///
@@ -199,12 +199,11 @@ pub fn init_in_place() -> usize {
 ///
 /// ```rust,no_run
 /// let cpu_count = 4;
-/// let size = percpu::percpu_area_size_for_cpus(cpu_count);
-/// let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
+/// let layout = percpu::percpu_area_layout_expected(cpu_count);
 /// let base = unsafe { std::alloc::alloc(layout) as usize };
-/// percpu::init(base as *const (), cpu_count);
+/// percpu::init(base as *mut u8, cpu_count);
 /// ```
-pub fn init(base: *const (), cpu_count: usize) -> usize {
+pub fn init(base: *mut u8, cpu_count: usize) -> usize {
     init_inner(base, cpu_count, false)
 }
 

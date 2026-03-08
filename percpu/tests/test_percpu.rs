@@ -308,11 +308,10 @@ fn test_percpu_multi_core() {
     {
         println!("\nTesting multi-threaded mode with init()...");
 
-        let size = percpu_area_size_for_cpus(4);
-        let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
+        let layout = percpu_area_layout_expected(4);
         let base = unsafe { std::alloc::alloc(layout) as usize };
 
-        assert_eq!(init(base as *const (), 4), 4);
+        assert_eq!(init(base as *mut u8, 4), 4);
         init_percpu_reg(0);
 
         let base_from_reg = read_percpu_reg();

@@ -10,8 +10,8 @@ pub fn percpu_area_size() -> usize {
 /// Returns the per-CPU data area size for the given number of CPUs.
 ///
 /// Always returns `0` for "sp-naive" mode since no per-CPU memory areas are needed.
-pub fn percpu_area_size_for_cpus(_cpu_count: usize) -> usize {
-    0
+pub fn percpu_area_layout_expected(_cpu_count: usize) -> core::alloc::Layout {
+    core::alloc::Layout::from_size_align(0, 0x1000).unwrap()
 }
 
 /// Returns the number of per-CPU data areas reserved.
@@ -70,6 +70,6 @@ pub fn init_in_place() -> usize {
 /// - `_cpu_count`: Number of CPUs (ignored)
 ///
 /// Returns the number of areas initialized.
-pub fn init(_base: *const (), _cpu_count: usize) -> usize {
+pub fn init(_base: *mut u8, _cpu_count: usize) -> usize {
     1
 }
