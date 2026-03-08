@@ -39,11 +39,14 @@ jobs:
       - name: Check rust version
         run: rustc --version --verbose
 
+      - name: Install cargo-hack
+        run: cargo install cargo-hack
+
       - name: Check code format
         run: cargo fmt --all -- --check
 
-      - name: "Build (sp: ${{ matrix.sp_naive }}, nz-vma: ${{ matrix.non_zero_vma }}, el2: ${{ matrix.arm_el2 }}, preempt: ${{ matrix.preempt }})"
-        run: cargo build --target ${{ matrix.target }} --features "${{ matrix.sp_naive }},${{ matrix.non_zero_vma }},${{ matrix.arm_el2 }},${{ matrix.preempt }}"
+      - name: Build all feature power sets
+        run: cargo hack build --feature-powerset --no-dev-deps --workspace --target ${{ matrix.target }}
 
-      - name: "Clippy (sp: ${{ matrix.sp_naive }}, nz-vma: ${{ matrix.non_zero_vma }}, el2: ${{ matrix.arm_el2 }}, preempt: ${{ matrix.preempt }})"
-        run: cargo clippy --target ${{ matrix.target }} --features "${{ matrix.sp_naive }},${{ matrix.non_zero_vma }},${{ matrix.arm_el2 }},${{ matrix.preempt }}"
+      - name: Clippy all feature power sets
+        run: cargo hack clippy --feature-powerset --no-dev-deps --workspace --target ${{ matrix.target }}
