@@ -16,7 +16,7 @@ const fn align_up_64(val: usize) -> usize {
 
 /// The custom per-CPU data area base address. We only employ `AtomicUsize`'s
 /// interior mutability and atomicity here.
-#[cfg(any(feature = "custom-base", not(target_os = "none")))]
+#[cfg(feature = "custom-base")]
 static PERCPU_AREA_BASE: spin::once::Once<usize> = spin::once::Once::new();
 
 extern "C" {
@@ -58,7 +58,7 @@ pub fn percpu_area_size_for_cpus(cpu_count: usize) -> usize {
 /// if `cpu_id` is 0, it returns the base address of all per-CPU data areas.
 pub fn percpu_area_base(cpu_id: usize) -> usize {
     cfg_if::cfg_if! {
-        if #[cfg(any(feature = "custom-base", not(target_os = "none")))] {
+        if #[cfg(feature = "custom-base")] {
             let base = *PERCPU_AREA_BASE.get().unwrap();
         } else {
             let base = _percpu_start as *const () as usize;
@@ -114,17 +114,6 @@ pub fn init_static() -> usize {
 
     validate_percpu_vma();
 
-    // When running on Linux, we allocate the per-CPU data area here.
-    #[cfg(not(target_os = "none"))]
-    {
-        let total_size = _percpu_end as *const () as usize - _percpu_start as *const () as usize;
-        let layout = std::alloc::Layout::from_size_align(total_size, 0x1000).unwrap();
-        let base = unsafe { std::alloc::alloc(layout) as usize };
-        PERCPU_AREA_BASE.call_once(|| base);
-
-        // Copy per-cpu data of the primary CPU from the `.percpu` section.
-        copy_percpu_region(_percpu_start as *const (), 0..=0);
-    }
 
     // Get the number of per-CPU data areas.
     let cpu_count = percpu_area_num();
