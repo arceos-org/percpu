@@ -44,16 +44,13 @@ fn test_percpu() {
 
     #[cfg(feature = "sp-naive")]
     let base = {
-        #[cfg(feature = "custom-base")]
-        init(std::ptr::null(), 1);
-        #[cfg(not(feature = "custom-base"))]
-        init();
+        init_static();
         0
     };
 
     #[cfg(all(not(feature = "sp-naive"), not(feature = "custom-base")))]
     let base = {
-        assert_eq!(init(), 4);
+        assert_eq!(init_static(), 4);
         let area_base_0 = percpu_area_base(0);
         unsafe { write_percpu_reg(area_base_0) };
 
@@ -70,7 +67,7 @@ fn test_percpu() {
         let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
         let base = unsafe { std::alloc::alloc(layout) as usize };
 
-        assert_eq!(init(base as *const (), 4), 4);
+        assert_eq!(init_dynamic(base as *const (), 4), 4);
         init_percpu_reg(0);
 
         println!(

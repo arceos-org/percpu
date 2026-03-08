@@ -47,25 +47,25 @@ to access the corresponding field.
 #[percpu::def_percpu]
 static CPU_ID: usize = 0;
 
-// initialize per-CPU data areas.
+// Initialize per-CPU data areas.
 #[cfg(not(feature = "custom-base"))]
-percpu::init();
+percpu::init_static();
 #[cfg(feature = "custom-base")]
 {
-    // when `custom-base` feature is enabled, you need to allocate the per-CPU
+    // When `custom-base` feature is enabled, you need to allocate the per-CPU
     // data area manually.
     let cpu_count = 4;
     let size = percpu::percpu_area_size_for_cpus(cpu_count);
     let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
     let base = unsafe { std::alloc::alloc(layout) as usize };
-    percpu::init(base as *const (), cpu_count);
-    // and set the initial value manually.
+    percpu::init_dynamic(base as *const (), cpu_count);
+    // And set the initial value manually.
     CPU_ID.reset_to_init();
 }
-// set the thread pointer register to the per-CPU data area 0.
+// Set the thread pointer register to the per-CPU data area 0.
 percpu::init_percpu_reg(0);
 
-// access the per-CPU data `CPU_ID` on the current CPU.
+// Access the per-CPU data `CPU_ID` on the current CPU.
 println!("{}", CPU_ID.read_current()); // prints "0"
 CPU_ID.write_current(1);
 println!("{}", CPU_ID.read_current()); // prints "1"
@@ -90,35 +90,29 @@ _percpu_end = _percpu_start + SIZEOF(.percpu);
 
 ### Working Modes
 
-The crate supports different working modes through feature combinations:
+The crate supports three working modes through feature combinations:
 
-| Features                       | Per-CPU Data Area | `.percpu` VMA | Use case                                      | Linux |
-|--------------------------------|-------------------|---------------|-----------------------------------------------|-------|
-| (none)                         | `.percpu` section | Must be 0     | Multi-threaded bare metal                     | ❌     |
-| `sp-naive`                     | Global vars       | N/A           | Single-threaded bare metal / Linux user-space | ✅     |
-| `non-zero-vma`                 | `.percpu` section | Any           | Multi-threaded Linux user-space               | ✅     |
-| `custom-base`                  | Custom memory     | Must be 0     | PIC bare metal / Dynamic CPU detection        | ❌     |
-| `custom-base` & `non-zero-vma` | Custom memory     | Any           | PIC Linux user-space                          | ✅     |
+| Mode | Feature | Per-CPU Data Area | `.percpu` VMA | Init Function | Use case |
+|------|---------|-------------------|---------------|---------------|----------|
+| Single-core | `sp-naive` | Global vars | N/A | `init_static()` | Single-threaded bare metal / Linux |
+| Multi-core static | (none) | `.percpu` section | Must be 0 | `init_static()` | Multi-threaded bare metal |
+| Multi-core dynamic | `custom-base` | Custom memory | Must be 0 | `init_dynamic()` | PIC bare metal / Dynamic CPU count |
+
+The `non-zero-vma` feature can be combined with any mode to allow the `.percpu` section to be placed at a non-zero VMA address.
 
 ### Cargo Features
 
-These features control the working mode of the crate:
+**Mode features** (select one):
 
-- `sp-naive`: Force **single-core** mode. Each per-CPU data is just a global variable,
-  architecture-specific thread pointer register is not used. This feature makes
-  `non-zero-vma` and `custom-base` ineffective.
-- `non-zero-vma`: Allows the `.percpu` section to be placed at a **non-zero VMA**.
-  Required for Linux user-space programs as some linkers that don't support VMA 0.
-- `custom-base`: Allows **user-defined memory allocation** for per-CPU data areas.
-  Useful for dynamic CPU count or custom memory requirements. This feature
-  **changes the signature** of `init()` function.
+- `sp-naive`: **Single-core** mode. Each per-CPU data is just a global variable. Architecture-specific thread pointer register is not used. Use `init_static()` for initialization.
+- `custom-base`: **Multi-core dynamic** mode. Allows user-defined memory allocation for per-CPU data areas. Use `init_dynamic()` for initialization.
+- (none): **Multi-core static** mode (default). Uses `.percpu` section for per-CPU data areas. Use `init_static()` for initialization.
 
-These features further control the behavior of the crate:
+**Auxiliary features** (can be combined with any mode):
 
-- `preempt`: For **preemptible** system use. Disables preemption when accessing
-  per-CPU data to prevent corruption.
-- `arm-el2`: For **ARM system** running at **EL2** use (e.g. hypervisors).
-  Uses `TPIDR_EL2` instead of `TPIDR_EL1`.
+- `non-zero-vma`: Allows the `.percpu` section to be placed at a **non-zero VMA**. Required for Linux user-space programs as some linkers don't support VMA 0.
+- `preempt`: For **preemptible** system use. Disables preemption when accessing per-CPU data to prevent corruption.
+- `arm-el2`: For **ARM system** running at **EL2** use (e.g. hypervisors). Uses `TPIDR_EL2` instead of `TPIDR_EL1`.
 
 ### Default values
 
