@@ -82,15 +82,10 @@ fn validate_percpu_vma() {
 }
 
 fn copy_percpu_region<T: Iterator<Item = usize>>(source: *const (), dest_ids: T) {
-    println!("copying per-CPU data from {:#?}", source);
-    let u8_source = source as *const u8;
-    println!("read from source: {:#x}", unsafe { *u8_source });
-
     let size = percpu_area_size();
 
     for dest_id in dest_ids {
         let dest_base = percpu_area_base(dest_id);
-        println!("copying per-CPU data to {:#x}", dest_base);
         unsafe {
             core::ptr::copy_nonoverlapping(source as *const u8, dest_base as *mut u8, size);
         }
@@ -127,17 +122,8 @@ pub fn init_static() -> usize {
         let base = unsafe { std::alloc::alloc(layout) as usize };
         PERCPU_AREA_BASE.call_once(|| base);
 
-        println!("allocated per-CPU data area at {:#x}", base);
-
-        println!(
-            "_percpu_start: {:#?}, _percpu_end: {:#?}",
-            _percpu_start as *const (), _percpu_end as *const ()
-        );
-
         // Copy per-cpu data of the primary CPU from the `.percpu` section.
         copy_percpu_region(_percpu_start as *const (), 0..=0);
-
-        println!("copied per-CPU data of the primary CPU from the `.percpu` section");
     }
 
     // Get the number of per-CPU data areas.
