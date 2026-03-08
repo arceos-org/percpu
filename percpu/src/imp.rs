@@ -12,8 +12,7 @@ const fn align_up_64(val: usize) -> usize {
 }
 
 /// The per-CPU data area base address.
-/// When `init()` is called, this stores the user-provided base address.
-/// When `init_static()` is called, this stores `_percpu_start`.
+/// Set by `init()` or `init_in_place()` during initialization.
 static PERCPU_AREA_BASE: AtomicPtr<()> = AtomicPtr::new(core::ptr::null_mut());
 
 extern "C" {
@@ -34,17 +33,35 @@ extern "C" {
 }
 
 /// Returns the number of per-CPU data areas reserved in the `.percpu` section.
+///
+/// This is calculated based on the size of the `.percpu` section and the size
+/// of one per-CPU data area. The section size should be reserved in the linker
+/// script with enough space for all CPUs.
 pub fn percpu_area_num() -> usize {
     (_percpu_end as *const () as usize - _percpu_start as *const () as usize)
         / align_up_64(percpu_area_size())
 }
 
 /// Returns the per-CPU data area size for one CPU.
+///
+/// This is the size of the `.percpu` section content (all per-CPU static variables),
+/// rounded up to 64-byte alignment.
 pub fn percpu_area_size() -> usize {
     percpu_symbol_vma!(_percpu_load_end) - percpu_symbol_vma!(_percpu_load_start)
 }
 
-/// Returns the per-CPU data area size for the given number of CPUs.
+/// Returns the total memory size required for per-CPU data areas for the given
+/// number of CPUs.
+///
+/// This is useful when using [`init()`] to allocate memory dynamically.
+///
+/// # Arguments
+///
+/// - `cpu_count`: Number of CPUs.
+///
+/// # Returns
+///
+/// The total size in bytes needed to store per-CPU data for all CPUs.
 pub fn percpu_area_size_for_cpus(cpu_count: usize) -> usize {
     cpu_count * align_up_64(percpu_area_size())
 }
@@ -59,9 +76,17 @@ fn percpu_area_base_nolock(cpu_id: usize) -> usize {
     base as usize + cpu_id * align_up_64(percpu_area_size())
 }
 
-/// Returns the base address of the per-CPU data area on the given CPU.
+/// Returns the base address of the per-CPU data area for the given CPU.
 ///
-/// If `cpu_id` is 0, it returns the base address of all per-CPU data areas.
+/// # Panics
+///
+/// Panics if the per-CPU area base address has not been set (i.e., `init()`
+/// or `init_in_place()` has not been called).
+///
+/// # Concurrency
+///
+/// This function spins until initialization is complete if called during
+/// the initialization process.
 pub fn percpu_area_base(cpu_id: usize) -> usize {
     while IS_INIT.load(Ordering::Acquire) {
         core::hint::spin_loop();
@@ -131,11 +156,18 @@ fn init_inner(base: *const (), cpu_count: usize, do_not_copy_to_primary: bool) -
 
 /// Initialize per-CPU data areas using the `.percpu` section.
 ///
-/// This uses `_percpu_start` as the base address. The per-CPU data areas are
-/// allocated statically in the `.percpu` section by the linker script.
+/// This function uses `_percpu_start` as the base address. The per-CPU data
+/// areas are statically allocated in the `.percpu` section by the linker script.
+/// The primary CPU's data is already in place, so only data for secondary CPUs
+/// (1 to cpu_count-1) is copied.
 ///
-/// Returns the number of areas initialized. Can be called repeatedly for
-/// re-initialization.
+/// This function can be called repeatedly for re-initialization. However,
+/// re-initialization will overwrite existing per-CPU data, so per-CPU variables
+/// should be reset manually after re-initialization.
+///
+/// # Returns
+///
+/// The number of per-CPU areas initialized (i.e., `percpu_area_num()`).
 pub fn init_in_place() -> usize {
     init_inner(_percpu_start as *const (), percpu_area_num(), true)
 }
@@ -143,23 +175,53 @@ pub fn init_in_place() -> usize {
 /// Initialize per-CPU data areas with user-provided memory.
 ///
 /// The caller is responsible for allocating memory for the per-CPU data areas.
-/// Use `percpu_area_size_for_cpus()` to calculate the required memory size.
+/// Use [`percpu_area_size_for_cpus()`] to calculate the required memory size.
+/// The allocated memory should be aligned to at least 64 bytes (cache line size),
+/// and preferably to 4KiB (page size) for better performance.
 ///
-/// Re-initialization may result in data loss or corruption. Always set per-CPU
-/// variables manually after re-initialization.
+/// This function copies the `.percpu` section content to the user-provided memory
+/// for all CPUs (0 to cpu_count-1).
+///
+/// This function can be called repeatedly for re-initialization. However,
+/// re-initialization will overwrite existing per-CPU data, so per-CPU variables
+/// should be reset manually after re-initialization.
 ///
 /// # Arguments
+///
 /// - `base`: Base address of the user-allocated memory.
 /// - `cpu_count`: Number of CPUs.
 ///
-/// Returns the number of areas initialized.
+/// # Returns
+///
+/// The number of per-CPU areas initialized (i.e., `cpu_count`).
+///
+/// # Example
+///
+/// ```rust,no_run
+/// let cpu_count = 4;
+/// let size = percpu::percpu_area_size_for_cpus(cpu_count);
+/// let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
+/// let base = unsafe { std::alloc::alloc(layout) as usize };
+/// percpu::init(base as *const (), cpu_count);
+/// ```
 pub fn init(base: *const (), cpu_count: usize) -> usize {
     init_inner(base, cpu_count, false)
 }
 
 /// Reads the architecture-specific per-CPU data register.
 ///
-/// This register is used to hold the per-CPU data base on each CPU.
+/// Returns the value stored in the per-CPU register, which is the base address
+/// of the current CPU's per-CPU data area.
+///
+/// # Architecture-specific registers
+///
+/// | Architecture | Register |
+/// |--------------|----------|
+/// | x86_64 | `GS_BASE` MSR |
+/// | RISC-V | `gp` |
+/// | AArch64 | `TPIDR_EL1` or `TPIDR_EL2` (with `arm-el2` feature) |
+/// | LoongArch | `$r21` |
+/// | ARM (32-bit) | `TPIDRURO` (CP15 c13) |
 pub fn read_percpu_reg() -> usize {
     let tp: usize;
     unsafe {
@@ -198,11 +260,17 @@ pub fn read_percpu_reg() -> usize {
 
 /// Writes the architecture-specific per-CPU data register.
 ///
-/// This register is used to hold the per-CPU data base on each CPU.
+/// Sets the per-CPU register to the given value, which should be the base address
+/// of the current CPU's per-CPU data area.
 ///
 /// # Safety
 ///
-/// This function is unsafe because it writes the low-level register directly.
+/// This function is unsafe because it directly writes to a low-level register.
+/// Setting an invalid address may cause undefined behavior.
+///
+/// # Architecture-specific registers
+///
+/// See [`read_percpu_reg()`] for the list of registers used per architecture.
 pub unsafe fn write_percpu_reg(tp: usize) {
     cfg_if::cfg_if! {
         if #[cfg(feature = "non-zero-vma")] {
@@ -243,13 +311,21 @@ pub unsafe fn write_percpu_reg(tp: usize) {
     }
 }
 
-/// Initializes the per-CPU data register.
+/// Initializes the per-CPU data register for the current CPU.
 ///
-/// It is equivalent to `write_percpu_reg(percpu_area_base(cpu_id))`, which set
-/// the architecture-specific per-CPU data register to the base address of the
-/// corresponding per-CPU data area.
+/// This function sets the architecture-specific per-CPU register to point to
+/// the base address of the per-CPU data area for the given CPU ID.
 ///
-/// `cpu_id` indicates which per-CPU data area to use.
+/// This should be called on each CPU during boot, after `init()` or `init_in_place()`
+/// has been called.
+///
+/// # Arguments
+///
+/// - `cpu_id`: The CPU ID to use (0-based index).
+///
+/// # Panics
+///
+/// Panics if the per-CPU area base address has not been set.
 pub fn init_percpu_reg(cpu_id: usize) {
     let tp = percpu_area_base(cpu_id);
     unsafe { write_percpu_reg(tp) }

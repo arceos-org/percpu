@@ -8,6 +8,8 @@ pub fn percpu_area_size() -> usize {
 }
 
 /// Returns the per-CPU data area size for the given number of CPUs.
+///
+/// Always returns `0` for "sp-naive" mode since no per-CPU memory areas are needed.
 pub fn percpu_area_size_for_cpus(_cpu_count: usize) -> usize {
     0
 }

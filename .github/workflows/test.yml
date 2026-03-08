@@ -23,14 +23,14 @@ jobs:
       - name: Run tests (sp-naive,non-zero-vma)
         run: cargo test --target x86_64-unknown-linux-gnu --features "sp-naive,non-zero-vma" -- --nocapture
 
-      - name: Run tests (sp-naive,custom-base)
+      - name: Run tests (sp-naive,preempt)
         run: cargo test --target x86_64-unknown-linux-gnu --features "sp-naive,preempt" -- --nocapture
 
-      - name: Run tests (sp-naive,custom-base,non-zero-vma)
+      - name: Run tests (sp-naive,non-zero-vma,preempt)
         run: cargo test --target x86_64-unknown-linux-gnu --features "sp-naive,non-zero-vma,preempt" -- --nocapture
 
       - name: Run tests (non-zero-vma)
         run: cargo test --target x86_64-unknown-linux-gnu --features "non-zero-vma" -- --nocapture
 
-      - name: Run tests (custom-base,non-zero-vma)
+      - name: Run tests (non-zero-vma,preempt)
         run: cargo test --target x86_64-unknown-linux-gnu --features "non-zero-vma,preempt" -- --nocapture
