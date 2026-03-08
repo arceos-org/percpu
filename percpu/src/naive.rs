@@ -52,3 +52,17 @@ pub fn init_percpu_reg(_cpu_id: usize) {}
 pub fn init_static() -> usize {
     1
 }
+
+/// Initialize per-CPU data areas with user-provided memory.
+///
+/// For "sp-naive" mode, parameters are ignored since per-CPU data is stored
+/// in global variables. Always returns `1`.
+///
+/// # Arguments
+/// - `_base`: Base address (ignored)
+/// - `_cpu_count`: Number of CPUs (ignored)
+///
+/// Returns the number of areas initialized.
+pub fn init(_base: *const (), _cpu_count: usize) -> usize {
+    1
+}

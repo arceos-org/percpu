@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/percpu)](https://crates.io/crates/percpu)
 [![Docs.rs](https://docs.rs/percpu/badge.svg)](https://docs.rs/percpu)
-[![CI](https://github.com/arceos-org/percpu/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arceos-org/percpu/actions/workflows/ci.yml)
+[![CI](https://github.com/arceos-org/percpu/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arceos-org/arceos/actions/workflows/ci.yml)
 
 Define and access per-CPU data structures.
 
@@ -47,23 +47,17 @@ to access the corresponding field.
 #[percpu::def_percpu]
 static CPU_ID: usize = 0;
 
-// Initialize per-CPU data areas.
-#[cfg(any(feature = "sp-naive", not(feature = "custom-base")))]
+// Option 1: Use init_static() for static initialization (uses .percpu section)
 percpu::init_static();
-#[cfg(all(not(feature = "sp-naive"), feature = "custom-base"))]
-{
-    // When `custom-base` feature is enabled, you need to allocate the per-CPU
-    // data area manually.
-    let cpu_count = 4;
-    let size = percpu::percpu_area_size_for_cpus(cpu_count);
-    let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
-    let base = unsafe { std::alloc::alloc(layout) as usize };
-    percpu::init_dynamic(base as *const (), cpu_count);
-    // And set the initial value manually.
-    CPU_ID.reset_to_init();
-}
-// Set the thread pointer register to the per-CPU data area 0.
 percpu::init_percpu_reg(0);
+
+// Option 2: Use init() for dynamic initialization (user-provided memory)
+// let cpu_count = 4;
+// let size = percpu::percpu_area_size_for_cpus(cpu_count);
+// let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
+// let base = unsafe { std::alloc::alloc(layout) as usize };
+// percpu::init(base as *const (), cpu_count);
+// percpu::init_percpu_reg(0);
 
 // Access the per-CPU data `CPU_ID` on the current CPU.
 println!("{}", CPU_ID.read_current()); // prints "0"
@@ -90,26 +84,42 @@ _percpu_end = _percpu_start + SIZEOF(.percpu);
 
 ### Working Modes
 
-The crate supports three working modes through combination of features `sp-naive` and `custom-base`:
+The crate supports two working modes:
 
-| Mode               | Feature       | Per-CPU Data Area | `.percpu` VMA | Init Function    | Use case                           |
-|--------------------|---------------|-------------------|---------------|------------------|------------------------------------|
-| Single-core        | `sp-naive`    | Global vars       | N/A           | `init_static()`  | Single-threaded bare metal / Linux |
-| Multi-core static  | (none)        | `.percpu` section | Must be 0     | `init_static()`  | Multi-threaded bare metal          |
-| Multi-core dynamic | `custom-base` | Custom memory     | Must be 0     | `init_dynamic()` | PIC bare metal / Dynamic CPU count |
+| Mode        | Feature    | Per-CPU Data Area | `.percpu` VMA | Use case                           |
+|-------------|------------|-------------------|---------------|------------------------------------|
+| Single-core | `sp-naive` | Global vars       | N/A           | Single-threaded bare metal / Linux |
+| Multi-core  | (none)     | `.percpu` section | Must be 0     | Multi-threaded bare metal          |
 
-`sp-naive` disables `custom-base`, i.e., `sp-naive` + `custom-base` = `sp-naive`.
+### Initialization Functions
+
+Both modes provide the same initialization API:
+
+- `init_static()`: Initialize using the `.percpu` section (static allocation)
+  - Multi-core: Uses `_percpu_start` as base address
+  - Single-core: No-op, returns 1
+
+- `init(base, cpu_count)`: Initialize with user-provided memory (dynamic allocation)
+  - Multi-core: Uses the provided base address
+  - Single-core: Parameters ignored, returns 1
+
+- `percpu_area_size_for_cpus(cpu_count)`: Calculate memory size for given CPU count
+  - Multi-core: Returns `cpu_count * percpu_area_size()`
+  - Single-core: Not available (returns 0)
 
 ### Features List
 
-**Mode features** (select one):
+**Mode feature**:
 
-- `sp-naive`: **Single-core** mode. Each per-CPU data is just a global variable. Architecture-specific thread pointer register is not used. Use `init_static()` for initialization.
-- `custom-base`: **Multi-core dynamic** mode. Allows user-defined memory allocation for per-CPU data areas. Use `init_dynamic()` for initialization.
-- (none): **Multi-core static** mode (default). Uses `.percpu` section for per-CPU data areas. Use `init_static()` for initialization.
+- `sp-naive`: **Single-core** mode. Each per-CPU data is just a global variable.
+  Architecture-specific thread pointer register is not used.
 
 **Auxiliary features** (can be combined with any mode):
 
-- `non-zero-vma`: Allows the `.percpu` section to be placed at a **non-zero VMA**. Required for Linux user-space programs as some linkers don't support VMA 0. `sp-naive` does not need `non-zero-vma` as it uses global variables.
-- `preempt`: For **preemptible** system use. Disables preemption when accessing per-CPU data to prevent corruption.
-- `arm-el2`: For **ARM system** running at **EL2** use (e.g. hypervisors). Uses `TPIDR_EL2` instead of `TPIDR_EL1`.
+- `non-zero-vma`: Allows the `.percpu` section to be placed at a **non-zero VMA**.
+  Required for Linux user-space programs as some linkers don't support VMA 0.
+  `sp-naive` does not need `non-zero-vma` as it uses global variables.
+- `preempt`: For **preemptible** system use. Disables preemption when accessing
+  per-CPU data to prevent corruption.
+- `arm-el2`: For **ARM system** running at **EL2** use (e.g. hypervisors).
+  Uses `TPIDR_EL2` instead of `TPIDR_EL1`.

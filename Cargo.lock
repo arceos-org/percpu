@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "percpu"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "cfg-if",
  "kernel_guard",
@@ -54,7 +54,7 @@ dependencies = [
 
 [[package]]
 name = "percpu_macros"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "cfg-if",
  "proc-macro2",

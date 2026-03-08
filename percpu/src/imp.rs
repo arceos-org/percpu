@@ -2,11 +2,8 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use percpu_macros::percpu_symbol_vma;
 
-/// When the `custom-base` feature is disabled, this atomic is used to mark
-/// whether the per-CPU data areas have been initialized.
-///
-/// When the `custom-base` feature is enabled, this atomic is used as a mutex
-/// and is cleared after the initialization to enable re-initialization.
+/// This atomic is used to mark whether the per-CPU data areas have been initialized.
+/// It is cleared after initialization to enable re-initialization when using `init()`.
 static IS_INIT: AtomicBool = AtomicBool::new(false);
 
 const fn align_up_64(val: usize) -> usize {
@@ -14,9 +11,9 @@ const fn align_up_64(val: usize) -> usize {
     (val + SIZE_64BIT - 1) & !(SIZE_64BIT - 1)
 }
 
-/// The custom per-CPU data area base address. We only employ `AtomicUsize`'s
-/// interior mutability and atomicity here.
-#[cfg(feature = "custom-base")]
+/// The per-CPU data area base address.
+/// When `init()` is called, this stores the user-provided base address.
+/// When `init_static()` is called, this stores `_percpu_start`.
 static PERCPU_AREA_BASE: spin::once::Once<usize> = spin::once::Once::new();
 
 extern "C" {
@@ -48,22 +45,18 @@ pub fn percpu_area_size() -> usize {
 }
 
 /// Returns the per-CPU data area size for the given number of CPUs.
-#[cfg(feature = "custom-base")]
 pub fn percpu_area_size_for_cpus(cpu_count: usize) -> usize {
     cpu_count * align_up_64(percpu_area_size())
 }
 
 /// Returns the base address of the per-CPU data area on the given CPU.
 ///
-/// if `cpu_id` is 0, it returns the base address of all per-CPU data areas.
+/// If `cpu_id` is 0, it returns the base address of all per-CPU data areas.
 pub fn percpu_area_base(cpu_id: usize) -> usize {
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "custom-base")] {
-            let base = *PERCPU_AREA_BASE.get().unwrap();
-        } else {
-            let base = _percpu_start as *const () as usize;
-        }
-    }
+    let base = PERCPU_AREA_BASE
+        .get()
+        .copied()
+        .unwrap_or(_percpu_start as *const () as usize);
     base + cpu_id * align_up_64(percpu_area_size())
 }
 
@@ -94,15 +87,11 @@ fn copy_percpu_region<T: Iterator<Item = usize>>(source: *const (), dest_ids: T)
 
 /// Initialize per-CPU data areas using the `.percpu` section.
 ///
-/// This function is for multi-core static mode (default mode). The per-CPU data
-/// areas are allocated statically in the `.percpu` section by the linker script.
+/// This uses `_percpu_start` as the base address. The per-CPU data areas are
+/// allocated statically in the `.percpu` section by the linker script.
 ///
-/// On bare metal, it copies the primary CPU's data to other CPUs.
-/// On Linux, it allocates memory dynamically for the per-CPU data areas.
-///
-/// Returns the number of areas initialized. If this function has been called
-/// before, it does nothing and returns 0.
-#[cfg(not(feature = "custom-base"))]
+/// Returns the number of areas initialized. Can be called repeatedly for
+/// re-initialization.
 pub fn init_static() -> usize {
     // Avoid re-initialization.
     if IS_INIT
@@ -117,16 +106,28 @@ pub fn init_static() -> usize {
     // Get the number of per-CPU data areas.
     let cpu_count = percpu_area_num();
 
-    // Copy per-cpu data of the primary CPU to other CPUs.
-    copy_percpu_region(percpu_area_base(0) as *const (), 1..cpu_count);
+    // Use _percpu_start directly for static initialization.
+    let base = _percpu_start as *const () as usize;
+    let size = percpu_area_size();
+
+    // Copy per-CPU data of the primary CPU to other CPUs.
+    for i in 1..cpu_count {
+        let dest_base = base + i * align_up_64(size);
+        unsafe {
+            core::ptr::copy_nonoverlapping(base as *const u8, dest_base as *mut u8, size);
+        }
+    }
+
+    // Enable re-initialization.
+    IS_INIT.store(false, Ordering::Release);
 
     cpu_count
 }
 
 /// Initialize per-CPU data areas with user-provided memory.
 ///
-/// This function is for multi-core dynamic mode (`custom-base` feature). The caller
-/// is responsible for allocating memory for the per-CPU data areas.
+/// The caller is responsible for allocating memory for the per-CPU data areas.
+/// Use `percpu_area_size_for_cpus()` to calculate the required memory size.
 ///
 /// # Arguments
 /// - `base`: Base address of the user-allocated memory.
@@ -134,9 +135,8 @@ pub fn init_static() -> usize {
 ///
 /// Returns the number of areas initialized. Can be called repeatedly for
 /// re-initialization.
-#[cfg(feature = "custom-base")]
-pub fn init_dynamic(base: *const (), cpu_count: usize) -> usize {
-    // Avoid re-initialization (use as mutex for custom-base mode).
+pub fn init(base: *const (), cpu_count: usize) -> usize {
+    // Avoid re-initialization.
     if IS_INIT
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
@@ -150,7 +150,7 @@ pub fn init_dynamic(base: *const (), cpu_count: usize) -> usize {
 
     copy_percpu_region(_percpu_start as *const (), 0..cpu_count);
 
-    // Enable re-initialization for custom-base mode.
+    // Enable re-initialization.
     IS_INIT.store(false, Ordering::Release);
 
     cpu_count
