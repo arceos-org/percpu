@@ -14,11 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode_features:
-          - ""
-          - "sp-naive"
-          - "custom-base"
-          - "custom-base,sp-naive" # Test conflicting features, should behave as sp-naive
+        sp_naive: ["", "sp-naive"]
         non_zero_vma: ["", "non-zero-vma"]
         arm_el2: ["", "arm-el2"]
         preempt: ["", "preempt"]
@@ -46,8 +42,8 @@ jobs:
       - name: Check code format
         run: cargo fmt --all -- --check
 
-      - name: "Build (mode: ${{ matrix.mode_features }}, non_zero_vma: ${{ matrix.non_zero_vma }}, arm_el2: ${{ matrix.arm_el2 }}, preempt: ${{ matrix.preempt }})"
-        run: cargo build --target ${{ matrix.target }} --features "${{ matrix.mode_features }},${{ matrix.non_zero_vma }},${{ matrix.arm_el2 }},${{ matrix.preempt }}"
+      - name: "Build (sp: ${{ matrix.sp_naive }}, nz-vma: ${{ matrix.non_zero_vma }}, el2: ${{ matrix.arm_el2 }}, preempt: ${{ matrix.preempt }})"
+        run: cargo build --target ${{ matrix.target }} --features "${{ matrix.sp_naive }},${{ matrix.non_zero_vma }},${{ matrix.arm_el2 }},${{ matrix.preempt }}"
 
-      - name: "Clippy (mode: ${{ matrix.mode_features }}, non_zero_vma: ${{ matrix.non_zero_vma }}, arm_el2: ${{ matrix.arm_el2 }}, preempt: ${{ matrix.preempt }})"
-        run: cargo clippy --target ${{ matrix.target }} --features "${{ matrix.mode_features }},${{ matrix.non_zero_vma }},${{ matrix.arm_el2 }},${{ matrix.preempt }}"
+      - name: "Clippy (sp: ${{ matrix.sp_naive }}, nz-vma: ${{ matrix.non_zero_vma }}, el2: ${{ matrix.arm_el2 }}, preempt: ${{ matrix.preempt }})"
+        run: cargo clippy --target ${{ matrix.target }} --features "${{ matrix.sp_naive }},${{ matrix.non_zero_vma }},${{ matrix.arm_el2 }},${{ matrix.preempt }}"

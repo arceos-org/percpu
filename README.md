@@ -41,23 +41,83 @@ to access the corresponding field.
 > When feature `arm-el2` is enabled, `TPIDR_EL2` is used. Otherwise, `TPIDR_EL1`
 > is used.
 
+## Features
+
+**Mode feature**:
+
+- `sp-naive`: **Single-core** mode. Each per-CPU data is just a global variable.
+  Architecture-specific thread pointer register is not used.
+
+  | Feature    | Mode        | Per-CPU Data Area                         |
+  |------------|-------------|-------------------------------------------|
+  | `sp-naive` | Single-core | Global vars                               |
+  | (none)     | Multi-core  | `.percpu` section or user-provided memory |
+
+**Other features** (can be combined with any mode):
+
+- `non-zero-vma`: Allows the `.percpu` section to be placed at a **non-zero VMA**.
+  Required for Linux user-space programs as some linkers don't support VMA 0.
+  `sp-naive` does not need `non-zero-vma` as it uses global variables.
+- `preempt`: For **preemptible** system use. Disables preemption when accessing
+  per-CPU data to prevent corruption.
+- `arm-el2`: For **ARM system** running at **EL2** use (e.g. hypervisors).
+  Uses `TPIDR_EL2` instead of `TPIDR_EL1`.
+
+## Usage
+
+### Initialization
+
+Two methods are provided to initialize the per-CPU data areas:
+
+- `init_in_place()`: Initialize using the `.percpu` section (static allocation),
+  which should be reserved in the linker script. See [the example linker script](./test_percpu.x)
+  for an example.
+- `init(base, cpu_count)`: Initialize with user-provided memory (dynamic allocation),
+  user must use `percpu_area_size_for_cpus(cpu_count)` to calculate the required
+  memory size. It's highly recommended to align the memory to 4KiB page size.
+
+After initialization, the per-CPU data areas are ready to be used. You can use
+`init_percpu_reg(cpu_id)` on each CPU to set the per-CPU register to the base
+address of the corresponding per-CPU data area.
+
+### Accessing Per-CPU Data
+
+To access the per-CPU data on the current CPU, you can use the `current_ptr`,
+`current_ref_raw`, `current_ref`, `with_current` (recommended, it handles
+preemption automatically), `reset_to_init`. Primitive unsigned types and booleans
+can be accessed directly using `read_current`, `write_current` (with preemption
+handling automatically) and `read_current_raw`, `write_current_raw` (without
+preemption handling).
+
+It's also possible to access the per-CPU data on other CPUs using `remote_ptr`,
+`remote_ref_raw`, `remote_ref`. Such operations are intrinsically **unsafe** and
+it's the caller's responsibility to ensure that the CPU ID is valid and that
+data races will not happen.
+
+To reset a per-CPU data to the initial value, you can use `reset_to_init`.
+
 ## Examples
 
 ```rust,no_run
 #[percpu::def_percpu]
 static CPU_ID: usize = 0;
 
-// Option 1: Use init_static() for static initialization (uses .percpu section)
-percpu::init_static();
+// Option 1: Use init_in_place() to use the `.percpu` section (statically-
+// allocated during linking). Enough space must be reserved for the `.percpu`
+// section in the linker script.
+percpu::init_in_place();
 percpu::init_percpu_reg(0);
 
-// Option 2: Use init() for dynamic initialization (user-provided memory)
-// let cpu_count = 4;
-// let size = percpu::percpu_area_size_for_cpus(cpu_count);
-// let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
-// let base = unsafe { std::alloc::alloc(layout) as usize };
-// percpu::init(base as *const (), cpu_count);
-// percpu::init_percpu_reg(0);
+// Option 2: Use init() with user-provided memory and cpu_count for dynamic
+// initialization. The caller is responsible for allocating memory for the per-CPU
+// data areas. Use `percpu_area_size_for_cpus()` to calculate the required memory
+// size.
+let cpu_count = 4;
+let size = percpu::percpu_area_size_for_cpus(cpu_count);
+let layout = std::alloc::Layout::from_size_align(size, 0x1000).unwrap();
+let base = unsafe { std::alloc::alloc(layout) as usize };
+percpu::init(base as *const (), cpu_count);
+percpu::init_percpu_reg(0);
 
 // Access the per-CPU data `CPU_ID` on the current CPU.
 println!("{}", CPU_ID.read_current()); // prints "0"
@@ -65,7 +125,8 @@ CPU_ID.write_current(1);
 println!("{}", CPU_ID.read_current()); // prints "1"
 ```
 
-Currently, you need to **modify the linker script manually**, add the following lines to your linker script:
+Currently, you need to **modify the linker script manually**, add the following
+lines to your linker script:
 
 ```text,ignore
 . = ALIGN(4K);
@@ -75,51 +136,10 @@ _percpu_end = _percpu_start + SIZEOF(.percpu);
     _percpu_load_start = .;
     *(.percpu .percpu.*)
     _percpu_load_end = .;
+    // If you want to use the `.percpu` section for static initialization, you
+    // need to reserve enough space for the `.percpu` section, as shown below.
     . = _percpu_load_start + ALIGN(64) * CPU_NUM;
 }
 . = _percpu_end;
 ```
 
-## Notes
-
-### Working Modes
-
-The crate supports two working modes:
-
-| Mode        | Feature    | Per-CPU Data Area | `.percpu` VMA | Use case                           |
-|-------------|------------|-------------------|---------------|------------------------------------|
-| Single-core | `sp-naive` | Global vars       | N/A           | Single-threaded bare metal / Linux |
-| Multi-core  | (none)     | `.percpu` section | Must be 0     | Multi-threaded bare metal          |
-
-### Initialization Functions
-
-Both modes provide the same initialization API:
-
-- `init_static()`: Initialize using the `.percpu` section (static allocation)
-  - Multi-core: Uses `_percpu_start` as base address
-  - Single-core: No-op, returns 1
-
-- `init(base, cpu_count)`: Initialize with user-provided memory (dynamic allocation)
-  - Multi-core: Uses the provided base address
-  - Single-core: Parameters ignored, returns 1
-
-- `percpu_area_size_for_cpus(cpu_count)`: Calculate memory size for given CPU count
-  - Multi-core: Returns `cpu_count * percpu_area_size()`
-  - Single-core: Not available (returns 0)
-
-### Features List
-
-**Mode feature**:
-
-- `sp-naive`: **Single-core** mode. Each per-CPU data is just a global variable.
-  Architecture-specific thread pointer register is not used.
-
-**Auxiliary features** (can be combined with any mode):
-
-- `non-zero-vma`: Allows the `.percpu` section to be placed at a **non-zero VMA**.
-  Required for Linux user-space programs as some linkers don't support VMA 0.
-  `sp-naive` does not need `non-zero-vma` as it uses global variables.
-- `preempt`: For **preemptible** system use. Disables preemption when accessing
-  per-CPU data to prevent corruption.
-- `arm-el2`: For **ARM system** running at **EL2** use (e.g. hypervisors).
-  Uses `TPIDR_EL2` instead of `TPIDR_EL1`.

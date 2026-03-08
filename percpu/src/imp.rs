@@ -1,4 +1,4 @@
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use percpu_macros::percpu_symbol_vma;
 
@@ -14,7 +14,7 @@ const fn align_up_64(val: usize) -> usize {
 /// The per-CPU data area base address.
 /// When `init()` is called, this stores the user-provided base address.
 /// When `init_static()` is called, this stores `_percpu_start`.
-static PERCPU_AREA_BASE: spin::once::Once<usize> = spin::once::Once::new();
+static PERCPU_AREA_BASE: AtomicPtr<()> = AtomicPtr::new(core::ptr::null_mut());
 
 extern "C" {
     fn _percpu_start();
@@ -49,15 +49,25 @@ pub fn percpu_area_size_for_cpus(cpu_count: usize) -> usize {
     cpu_count * align_up_64(percpu_area_size())
 }
 
+fn percpu_area_base_nolock(cpu_id: usize) -> usize {
+    let base = PERCPU_AREA_BASE.load(Ordering::Relaxed);
+
+    if base.is_null() {
+        panic!("PerCPU area base address not set");
+    }
+
+    base as usize + cpu_id * align_up_64(percpu_area_size())
+}
+
 /// Returns the base address of the per-CPU data area on the given CPU.
 ///
 /// If `cpu_id` is 0, it returns the base address of all per-CPU data areas.
 pub fn percpu_area_base(cpu_id: usize) -> usize {
-    let base = PERCPU_AREA_BASE
-        .get()
-        .copied()
-        .unwrap_or(_percpu_start as *const () as usize);
-    base + cpu_id * align_up_64(percpu_area_size())
+    while IS_INIT.load(Ordering::Acquire) {
+        core::hint::spin_loop();
+    }
+
+    percpu_area_base_nolock(cpu_id)
 }
 
 /// Check if the `.percpu` section is loaded at VMA address 0 when feature "non-zero-vma" is disabled.
@@ -74,15 +84,49 @@ fn validate_percpu_vma() {
     }
 }
 
+/// Copies the per-CPU data from the source to the per-CPU data areas of the
+/// given CPUs.
 fn copy_percpu_region<T: Iterator<Item = usize>>(source: *const (), dest_ids: T) {
     let size = percpu_area_size();
 
     for dest_id in dest_ids {
-        let dest_base = percpu_area_base(dest_id);
+        let dest_base = percpu_area_base_nolock(dest_id);
         unsafe {
             core::ptr::copy_nonoverlapping(source as *const u8, dest_base as *mut u8, size);
         }
     }
+}
+
+fn init_inner(base: *const (), cpu_count: usize, do_not_copy_to_primary: bool) -> usize {
+    // Avoid re-initialization.
+    if IS_INIT
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return 0;
+    }
+
+    // Validate the VMA of the `.percpu` section.
+    validate_percpu_vma();
+
+    // Set the base address of the per-CPU data areas.
+    PERCPU_AREA_BASE.store(base as _, Ordering::Relaxed);
+
+    // Copy the per-CPU data from the `.percpu` section to the per-CPU areas of
+    // all CPUs.
+    copy_percpu_region(
+        _percpu_start as *const (),
+        if do_not_copy_to_primary {
+            1..cpu_count
+        } else {
+            0..cpu_count
+        },
+    );
+
+    // Enable re-initialization.
+    IS_INIT.store(false, Ordering::Release);
+
+    cpu_count
 }
 
 /// Initialize per-CPU data areas using the `.percpu` section.
@@ -92,36 +136,8 @@ fn copy_percpu_region<T: Iterator<Item = usize>>(source: *const (), dest_ids: T)
 ///
 /// Returns the number of areas initialized. Can be called repeatedly for
 /// re-initialization.
-pub fn init_static() -> usize {
-    // Avoid re-initialization.
-    if IS_INIT
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return 0;
-    }
-
-    validate_percpu_vma();
-
-    // Get the number of per-CPU data areas.
-    let cpu_count = percpu_area_num();
-
-    // Use _percpu_start directly for static initialization.
-    let base = _percpu_start as *const () as usize;
-    let size = percpu_area_size();
-
-    // Copy per-CPU data of the primary CPU to other CPUs.
-    for i in 1..cpu_count {
-        let dest_base = base + i * align_up_64(size);
-        unsafe {
-            core::ptr::copy_nonoverlapping(base as *const u8, dest_base as *mut u8, size);
-        }
-    }
-
-    // Enable re-initialization.
-    IS_INIT.store(false, Ordering::Release);
-
-    cpu_count
+pub fn init_in_place() -> usize {
+    init_inner(_percpu_start as *const (), percpu_area_num(), true)
 }
 
 /// Initialize per-CPU data areas with user-provided memory.
@@ -129,31 +145,16 @@ pub fn init_static() -> usize {
 /// The caller is responsible for allocating memory for the per-CPU data areas.
 /// Use `percpu_area_size_for_cpus()` to calculate the required memory size.
 ///
+/// Re-initialization may result in data loss or corruption. Always set per-CPU
+/// variables manually after re-initialization.
+///
 /// # Arguments
 /// - `base`: Base address of the user-allocated memory.
 /// - `cpu_count`: Number of CPUs.
 ///
-/// Returns the number of areas initialized. Can be called repeatedly for
-/// re-initialization.
+/// Returns the number of areas initialized.
 pub fn init(base: *const (), cpu_count: usize) -> usize {
-    // Avoid re-initialization.
-    if IS_INIT
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return 0;
-    }
-
-    validate_percpu_vma();
-
-    PERCPU_AREA_BASE.call_once(|| base as _);
-
-    copy_percpu_region(_percpu_start as *const (), 0..cpu_count);
-
-    // Enable re-initialization.
-    IS_INIT.store(false, Ordering::Release);
-
-    cpu_count
+    init_inner(base, cpu_count, false)
 }
 
 /// Reads the architecture-specific per-CPU data register.

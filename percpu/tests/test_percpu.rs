@@ -270,7 +270,7 @@ fn test_percpu_sp_naive() {
     println!("Testing single-threaded mode (sp-naive)...");
 
     // Test init_static()
-    init_static();
+    init_in_place();
     init_percpu_reg(0);
     test_percpu_local(0);
 
@@ -285,7 +285,7 @@ fn test_percpu_multi_core() {
     {
         println!("Testing multi-threaded mode with init_static()...");
 
-        assert_eq!(init_static(), 4);
+        assert_eq!(init_in_place(), 4);
         init_percpu_reg(0);
 
         let base_from_reg = read_percpu_reg();

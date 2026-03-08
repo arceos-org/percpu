@@ -43,18 +43,17 @@ dependencies = [
 
 [[package]]
 name = "percpu"
-version = "0.4.0"
+version = "0.3.0"
 dependencies = [
  "cfg-if",
  "kernel_guard",
  "percpu_macros",
- "spin",
  "x86",
 ]
 
 [[package]]
 name = "percpu_macros"
-version = "0.4.0"
+version = "0.3.0"
 dependencies = [
  "cfg-if",
  "proc-macro2",
@@ -88,12 +87,6 @@ checksum = "6c297679cb867470fa8c9f67dbba74a78d78e3e98d7cf2b08d6d71540f797332"
 dependencies = [
  "bitflags",
 ]
-
-[[package]]
-name = "spin"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
 
 [[package]]
 name = "syn"

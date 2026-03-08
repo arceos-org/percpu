@@ -7,6 +7,11 @@ pub fn percpu_area_size() -> usize {
     0
 }
 
+/// Returns the per-CPU data area size for the given number of CPUs.
+pub fn percpu_area_size_for_cpus(_cpu_count: usize) -> usize {
+    0
+}
+
 /// Returns the number of per-CPU data areas reserved.
 ///
 /// Always returns `1` for "sp-naive" use.
@@ -49,7 +54,7 @@ pub fn init_percpu_reg(_cpu_id: usize) {}
 /// in global variables. Always returns `1`.
 ///
 /// Returns the number of areas initialized.
-pub fn init_static() -> usize {
+pub fn init_in_place() -> usize {
     1
 }
 
