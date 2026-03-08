@@ -275,57 +275,55 @@ fn test_percpu_sp_naive() {
     test_percpu_local(0);
 
     // Test init() with parameters (should be ignored in sp-naive mode)
-    assert_eq!(init(std::ptr::null(), 1), 1);
+    assert_eq!(init(std::ptr::null_mut(), 1), 1);
 }
 
 #[cfg(not(feature = "sp-naive"))]
 #[test]
-fn test_percpu_multi_core() {
+fn test_percpu_multi_core_in_place() {
     // Test init_static() - uses .percpu section
-    {
-        println!("Testing multi-threaded mode with init_static()...");
 
-        assert_eq!(init_in_place(), 4);
-        init_percpu_reg(0);
+    println!("\nTesting multi-threaded mode with init_static()...");
 
-        let base_from_reg = read_percpu_reg();
-        let base_calculated = percpu_area_base(0);
-        assert_eq!(base_from_reg, base_calculated);
+    assert_eq!(init_in_place(), 4);
+    init_percpu_reg(0);
 
-        println!("per-CPU area base (calculated) = {:#x}", base_calculated);
-        println!("per-CPU area base (read) = {:#x}", base_from_reg);
-        println!("per-CPU area size = {}", percpu_area_size());
+    let base_from_reg = read_percpu_reg();
+    let base_calculated = percpu_area_base(0);
+    assert_eq!(base_from_reg, base_calculated);
 
-        test_percpu_local(base_from_reg);
-        test_percpu_remote(1);
-        test_percpu_remote(2);
-        test_percpu_remote(3);
-    }
+    println!("per-CPU area base (calculated) = {:#x}", base_calculated);
+    println!("per-CPU area base (read) = {:#x}", base_from_reg);
+    println!("per-CPU area size = {}", percpu_area_size());
 
-    // Test init() - uses user-provided memory
-    // Note: This test runs after init_static(), so it tests the re-initialization path.
-    // In a real use case, you would only call one of these functions.
-    {
-        println!("\nTesting multi-threaded mode with init()...");
+    test_percpu_local(base_from_reg);
+    test_percpu_remote(1);
+    test_percpu_remote(2);
+    test_percpu_remote(3);
+}
 
-        let layout = percpu_area_layout_expected(4);
-        let base = unsafe { std::alloc::alloc(layout) as usize };
+#[cfg(not(feature = "sp-naive"))]
+#[test]
+fn test_percpu_multi_core_dynamic() {
+    println!("\nTesting multi-threaded mode with init()...");
 
-        assert_eq!(init(base as *mut u8, 4), 4);
-        init_percpu_reg(0);
+    let layout = percpu_area_layout_expected(4);
+    let base = unsafe { std::alloc::alloc(layout) as usize };
 
-        let base_from_reg = read_percpu_reg();
-        let base_calculated = percpu_area_base(0);
-        assert_eq!(base_from_reg, base);
-        assert_eq!(base_calculated, base);
+    assert_eq!(init(base as *mut u8, 4), 4);
+    init_percpu_reg(0);
 
-        println!("per-CPU area base (allocated) = {:#x}", base);
-        println!("per-CPU area base (read) = {:#x}", base_from_reg);
-        println!("per-CPU area size = {}", percpu_area_size());
+    let base_from_reg = read_percpu_reg();
+    let base_calculated = percpu_area_base(0);
+    assert_eq!(base_from_reg, base);
+    assert_eq!(base_calculated, base);
 
-        test_percpu_local(base);
-        test_percpu_remote(1);
-        test_percpu_remote(2);
-        test_percpu_remote(3);
-    }
+    println!("per-CPU area base (allocated) = {:#x}", base);
+    println!("per-CPU area base (read) = {:#x}", base_from_reg);
+    println!("per-CPU area size = {}", percpu_area_size());
+
+    test_percpu_local(base);
+    test_percpu_remote(1);
+    test_percpu_remote(2);
+    test_percpu_remote(3);
 }
