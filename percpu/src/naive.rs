@@ -1,4 +1,5 @@
 //! Naive implementation for single CPU use.
+use crate::InitError;
 
 /// Returns the per-CPU data area size for one CPU.
 ///
@@ -56,8 +57,8 @@ pub fn init_percpu_reg(_cpu_id: usize) {}
 /// in global variables. Always returns `1`.
 ///
 /// Returns the number of areas initialized.
-pub fn init_in_place() -> usize {
-    1
+pub fn init_in_place() -> Result<usize, InitError> {
+    Ok(1)
 }
 
 /// Initialize per-CPU data areas with user-provided memory.
@@ -70,6 +71,6 @@ pub fn init_in_place() -> usize {
 /// - `_cpu_count`: Number of CPUs (ignored)
 ///
 /// Returns the number of areas initialized.
-pub fn init(_base: *mut u8, _cpu_count: usize) -> usize {
-    1
+pub fn init(_base: *mut u8, _cpu_count: usize) -> Result<usize, InitError> {
+    Ok(1)
 }

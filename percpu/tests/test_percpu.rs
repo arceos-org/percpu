@@ -270,12 +270,12 @@ fn test_percpu_sp_naive() {
     println!("Testing single-threaded mode (sp-naive)...");
 
     // Test init_static()
-    init_in_place();
+    assert_eq!(init_in_place(), Ok(1));
     init_percpu_reg(0);
     test_percpu_local(0);
 
     // Test init() with parameters (should be ignored in sp-naive mode)
-    assert_eq!(init(std::ptr::null_mut(), 1), 1);
+    assert_eq!(init(std::ptr::null_mut(), 1), Ok(1));
 }
 
 #[cfg(not(feature = "sp-naive"))]
@@ -285,7 +285,7 @@ fn test_percpu_multi_core_in_place() {
 
     println!("\nTesting multi-threaded mode with init_static()...");
 
-    assert_eq!(init_in_place(), 4);
+    assert_eq!(init_in_place(), Ok(4));
     init_percpu_reg(0);
 
     let base_from_reg = read_percpu_reg();
@@ -310,7 +310,7 @@ fn test_percpu_multi_core_dynamic() {
     let layout = percpu_area_layout_expected(4);
     let base = unsafe { std::alloc::alloc(layout) as usize };
 
-    assert_eq!(init(base as *mut u8, 4), 4);
+    assert_eq!(init(base as *mut u8, 4), Ok(4));
     init_percpu_reg(0);
 
     let base_from_reg = read_percpu_reg();
@@ -326,4 +326,16 @@ fn test_percpu_multi_core_dynamic() {
     test_percpu_remote(1);
     test_percpu_remote(2);
     test_percpu_remote(3);
+}
+
+#[cfg(not(feature = "sp-naive"))]
+#[test]
+fn test_percpu_init_rejects_invalid_base() {
+    assert!(init(std::ptr::null_mut(), 1).is_err());
+
+    let layout = percpu_area_layout_expected(1);
+    let base = unsafe { std::alloc::alloc(layout) };
+    assert!(!base.is_null());
+    assert!(init(unsafe { base.add(1) }, 1).is_err());
+    unsafe { std::alloc::dealloc(base, layout) };
 }

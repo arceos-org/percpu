@@ -1,13 +1,16 @@
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use percpu_macros::percpu_symbol_vma;
+use crate::InitError;
 
 /// This atomic tracks whether the per-CPU data areas is being initialized.
 /// It is cleared after initialization to enable re-initialization.
 static IS_INIT: AtomicBool = AtomicBool::new(false);
 
+const SIZE_64BIT: usize = 64;
+const PERCPU_AREA_ALIGN: usize = SIZE_64BIT;
+
 const fn align_up_64(val: usize) -> usize {
-    const SIZE_64BIT: usize = 0x40;
     (val + SIZE_64BIT - 1) & !(SIZE_64BIT - 1)
 }
 
@@ -62,8 +65,7 @@ pub fn percpu_area_size() -> usize {
 /// The expected layout for the per-CPU data area.
 pub fn percpu_area_layout_expected(cpu_count: usize) -> core::alloc::Layout {
     let size = cpu_count * align_up_64(percpu_area_size());
-    const ALIGNMENT: usize = 0x40;
-    core::alloc::Layout::from_size_align(size, ALIGNMENT).unwrap()
+    core::alloc::Layout::from_size_align(size, PERCPU_AREA_ALIGN).unwrap()
 }
 
 fn percpu_area_base_nolock(cpu_id: usize) -> usize {
@@ -122,13 +124,25 @@ fn copy_percpu_region<T: Iterator<Item = usize>>(source: *mut u8, dest_ids: T) {
     }
 }
 
-fn init_inner(base: *mut u8, cpu_count: usize, do_not_copy_to_primary: bool) -> usize {
+fn validate_percpu_area_base(base: *mut u8) -> Result<(), InitError> {
+    if base.is_null() {
+        return Err(InitError::InvalidBase);
+    }
+    if (base as usize) % PERCPU_AREA_ALIGN != 0 {
+        return Err(InitError::UnalignedBase);
+    }
+    Ok(())
+}
+
+fn init_inner(base: *mut u8, cpu_count: usize, do_not_copy_to_primary: bool) -> Result<usize, InitError> {
+    validate_percpu_area_base(base)?;
+
     // Avoid re-initialization.
     if IS_INIT
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
-        return 0;
+        return Ok(0);
     }
 
     // Validate the VMA of the `.percpu` section.
@@ -151,7 +165,7 @@ fn init_inner(base: *mut u8, cpu_count: usize, do_not_copy_to_primary: bool) -> 
     // Enable re-initialization.
     IS_INIT.store(false, Ordering::Release);
 
-    cpu_count
+    Ok(cpu_count)
 }
 
 /// Initialize per-CPU data areas using the `.percpu` section.
@@ -167,9 +181,14 @@ fn init_inner(base: *mut u8, cpu_count: usize, do_not_copy_to_primary: bool) -> 
 ///
 /// # Returns
 ///
-/// The number of per-CPU areas initialized (i.e., `percpu_area_num()`).
-pub fn init_in_place() -> usize {
-    init_inner(_percpu_start as *mut u8, percpu_area_num(), true)
+/// The number of per-CPU areas initialized (i.e., `percpu_area_num()`) on
+/// success.
+///
+/// Returns [`InitError::InvalidBase`] if `_percpu_start` is null, or
+/// [`InitError::UnalignedBase`] if `_percpu_start` is not 64-byte aligned.
+pub fn init_in_place() -> Result<usize, InitError> {
+    let base = _percpu_start as *mut u8;
+    init_inner(base, percpu_area_num(), true)
 }
 
 /// Initialize per-CPU data areas with user-provided memory.
@@ -193,7 +212,10 @@ pub fn init_in_place() -> usize {
 ///
 /// # Returns
 ///
-/// The number of per-CPU areas initialized (i.e., `cpu_count`).
+/// The number of per-CPU areas initialized (i.e., `cpu_count`) on success.
+///
+/// Returns [`InitError::InvalidBase`] if `base` is null, or
+/// [`InitError::UnalignedBase`] if `base` is not 64-byte aligned.
 ///
 /// # Example
 ///
@@ -201,9 +223,9 @@ pub fn init_in_place() -> usize {
 /// let cpu_count = 4;
 /// let layout = percpu::percpu_area_layout_expected(cpu_count);
 /// let base = unsafe { std::alloc::alloc(layout) as usize };
-/// percpu::init(base as *mut u8, cpu_count);
+/// percpu::init(base as *mut u8, cpu_count).unwrap();
 /// ```
-pub fn init(base: *mut u8, cpu_count: usize) -> usize {
+pub fn init(base: *mut u8, cpu_count: usize) -> Result<usize, InitError> {
     init_inner(base, cpu_count, false)
 }
 

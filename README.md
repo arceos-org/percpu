@@ -71,10 +71,11 @@ Two methods are provided to initialize the per-CPU data areas:
 
 - `init_in_place()`: Initialize using the `.percpu` section (static allocation),
   which should be reserved in the linker script. See [the example linker script](./test_percpu.x)
-  for an example.
+  for an example. Returns `Result<usize, InitError>`.
 - `init(base, cpu_count)`: Initialize with user-provided memory (dynamic allocation),
   user must use `percpu_area_layout_expected(cpu_count)` to calculate the required
   memory size. It's highly recommended to align the memory to 4KiB page size.
+  Returns `Result<usize, InitError>`.
 
 After initialization, the per-CPU data areas are ready to be used. You can use
 `init_percpu_reg(cpu_id)` on each CPU to set the per-CPU register to the base
@@ -105,7 +106,7 @@ static CPU_ID: usize = 0;
 // Option 1: Use init_in_place() to use the `.percpu` section (statically-
 // allocated during linking). Enough space must be reserved for the `.percpu`
 // section in the linker script.
-percpu::init_in_place();
+percpu::init_in_place().unwrap();
 percpu::init_percpu_reg(0);
 
 // Option 2: Use init() with user-provided memory and cpu_count for dynamic
@@ -115,7 +116,7 @@ percpu::init_percpu_reg(0);
 let cpu_count = 4;
 let layout = percpu::percpu_area_layout_expected(cpu_count);
 let base = unsafe { std::alloc::alloc(layout) as usize };
-percpu::init(base as *mut u8, cpu_count);
+percpu::init(base as *mut u8, cpu_count).unwrap();
 percpu::init_percpu_reg(0);
 
 // Access the per-CPU data `CPU_ID` on the current CPU.
