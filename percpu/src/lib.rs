@@ -4,12 +4,12 @@
 
 extern crate percpu_macros;
 
-mod init_error;
 #[cfg_attr(feature = "sp-naive", path = "naive.rs")]
 mod imp;
+mod init_error;
 
-pub use self::init_error::InitError;
 pub use self::imp::*;
+pub use self::init_error::InitError;
 pub use percpu_macros::def_percpu;
 
 #[doc(hidden)]

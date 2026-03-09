@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
-use percpu_macros::percpu_symbol_vma;
 use crate::InitError;
+use percpu_macros::percpu_symbol_vma;
 
 /// This atomic tracks whether the per-CPU data areas is being initialized.
 /// It is cleared after initialization to enable re-initialization.
@@ -134,7 +134,11 @@ fn validate_percpu_area_base(base: *mut u8) -> Result<(), InitError> {
     Ok(())
 }
 
-fn init_inner(base: *mut u8, cpu_count: usize, do_not_copy_to_primary: bool) -> Result<usize, InitError> {
+fn init_inner(
+    base: *mut u8,
+    cpu_count: usize,
+    do_not_copy_to_primary: bool,
+) -> Result<usize, InitError> {
     validate_percpu_area_base(base)?;
 
     // Avoid re-initialization.
