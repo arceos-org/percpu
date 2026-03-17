@@ -246,7 +246,7 @@ pub fn init(base: *mut u8, cpu_count: usize) -> Result<usize, InitError> {
 /// | RISC-V | `gp` |
 /// | AArch64 | `TPIDR_EL1` or `TPIDR_EL2` (with `arm-el2` feature) |
 /// | LoongArch | `$r21` |
-/// | ARM (32-bit) | `TPIDRURO` (CP15 c13) |
+/// | ARM (32-bit) | `TPIDRPRW` (CP15 c13) |
 pub fn read_percpu_reg() -> usize {
     let tp: usize;
     unsafe {
@@ -270,7 +270,7 @@ pub fn read_percpu_reg() -> usize {
                 // https://docs.kernel.org/arch/loongarch/introduction.html#gprs
                 core::arch::asm!("move {}, $r21", out(reg) tp)
             } else if #[cfg(target_arch = "arm")] {
-                core::arch::asm!("mrc p15, 0, {}, c13, c0, 3", out(reg) tp)
+                core::arch::asm!("mrc p15, 0, {}, c13, c0, 4", out(reg) tp)
             }
         }
     }
@@ -330,7 +330,7 @@ pub unsafe fn write_percpu_reg(tp: usize) {
             } else if #[cfg(target_arch = "loongarch64")] {
                 core::arch::asm!("move $r21, {}", in(reg) tp)
             } else if #[cfg(target_arch = "arm")] {
-                core::arch::asm!("mcr p15, 0, {}, c13, c0, 3", in(reg) tp)
+                core::arch::asm!("mcr p15, 0, {}, c13, c0, 4", in(reg) tp)
             }
         }
     }
