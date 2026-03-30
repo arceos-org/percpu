@@ -55,7 +55,6 @@ dependencies = [
 name = "percpu_macros"
 version = "0.3.1"
 dependencies = [
- "cfg-if",
  "proc-macro2",
  "quote",
  "syn",

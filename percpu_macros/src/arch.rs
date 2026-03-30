@@ -3,20 +3,24 @@ use syn::{Ident, Type};
 
 fn macos_unimplemented(item: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     quote! {
-        {
-            #[cfg(not(target_os = "macos"))]
-            { #item }
-            #[cfg(target_os = "macos")]
-            unimplemented!()
-        }
+        // aarch64 macOS is supported.
+        #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
+        { #item }
+        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+        { unimplemented!("per-CPU variables are not supported on x86_64 macOS") }
     }
 }
 
 /// Generate a code block that calculates the virtual memory address (VMA) of
 /// a symbol in the `.percpu` section based on the inner symbol name.
 pub fn gen_symbol_vma(symbol: &Ident) -> proc_macro2::TokenStream {
-    // the outer pair of braces is necessary to make the result an expression
-    macos_unimplemented(quote! {
+    // the slow and generic way to get the symbol address using PC-relative addressing.
+    let slow_addr = quote! {
+        unsafe { ::core::ptr::addr_of!(#symbol) as usize }
+    };
+
+    // the fast way to get the symbol address using the minimal number of instructions.
+    let fast_addr = quote! {
         unsafe {
             let value: usize;
             #[cfg(target_arch = "x86_64")]
@@ -35,7 +39,7 @@ pub fn gen_symbol_vma(symbol: &Ident) -> proc_macro2::TokenStream {
             {
                 let mut offset: u32;
                 ::core::arch::asm!(
-                    "movw {0}, #:lower16:{VAR}",
+                    "movw {0}, #:lower16:{VAR}", // Requires offset <= 0xffff_ffff
                     "movt {0}, #:upper16:{VAR}",
                     out(reg) offset,
                     VAR = sym #symbol,
@@ -58,7 +62,16 @@ pub fn gen_symbol_vma(symbol: &Ident) -> proc_macro2::TokenStream {
             );
             value
         }
-    })
+    };
+
+    quote! {
+        {
+            #[cfg(not(target_os = "macos"))]
+            { #fast_addr }
+            #[cfg(target_os = "macos")]
+            { #slow_addr }
+        }
+    }
 }
 
 /// Generate a code block that calculates the offset of the per-CPU variable based on the inner symbol name.
@@ -66,11 +79,11 @@ pub fn gen_offset(symbol: &Ident) -> proc_macro2::TokenStream {
     #[cfg(feature = "non-zero-vma")]
     {
         let symbol_vma = gen_symbol_vma(symbol);
-        let sumbol_vma_percpu_load_start = gen_symbol_vma(&format_ident!("_percpu_load_start"));
+        let symbol_vma_percpu_load_start = gen_symbol_vma(&format_ident!("_percpu_load_start"));
         quote! {
             {
-                extern "C" { fn _percpu_load_start(); }
-                (#symbol_vma) - (#sumbol_vma_percpu_load_start)
+                extern "C" { static _percpu_load_start: u8; }
+                (#symbol_vma) - (#symbol_vma_percpu_load_start)
             }
         }
     }
