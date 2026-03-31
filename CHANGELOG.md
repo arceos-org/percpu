@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2
+
+### Bug Fixes
+
+- Fixed doc build error in `gen_symbol_vma` on macOS (https://github.com/arceos-org/percpu/pull/27).
+
 ## 0.3.1
 
 ### Bug Fixes
