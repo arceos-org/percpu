@@ -1,5 +1,7 @@
-#![cfg(target_os = "linux")]
-#![cfg(any(feature = "non-zero-vma", feature = "sp-naive"))]
+#![cfg(any(
+    feature = "sp-naive",
+    all(target_os = "linux", feature = "non-zero-vma")
+))]
 
 use percpu::*;
 

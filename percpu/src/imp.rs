@@ -1,3 +1,4 @@
+use core::ptr::addr_of;
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use crate::InitError;
@@ -19,8 +20,8 @@ const fn align_up_64(val: usize) -> usize {
 static PERCPU_AREA_BASE: AtomicPtr<()> = AtomicPtr::new(core::ptr::null_mut());
 
 extern "C" {
-    fn _percpu_start();
-    fn _percpu_end();
+    static _percpu_start: u8;
+    static _percpu_end: u8;
     // WARNING: `_percpu_load_start`/`_percpu_load_end` (i.e. symbols in the
     // `.percpu` section) must be used with `percpu_symbol_vma!` macro to get
     // their VMA addresses. Casting them directly to `usize` may lead to
@@ -31,8 +32,8 @@ extern "C" {
     //.  (when Rust uses PC-relative addressing).
     //
     // See https://github.com/arceos-org/percpu/issues/18 for more details.
-    fn _percpu_load_start();
-    fn _percpu_load_end();
+    static _percpu_load_start: u8;
+    static _percpu_load_end: u8;
 }
 
 /// Returns the number of per-CPU data areas reserved in the `.percpu` section.
@@ -41,7 +42,7 @@ extern "C" {
 /// of one per-CPU data area. The section size should be reserved in the linker
 /// script with enough space for all CPUs.
 pub fn percpu_area_num() -> usize {
-    (_percpu_end as *mut u8 as usize - _percpu_start as *mut u8 as usize)
+    (addr_of!(_percpu_end) as usize - addr_of!(_percpu_start) as usize)
         / align_up_64(percpu_area_size())
 }
 
@@ -113,13 +114,13 @@ fn validate_percpu_vma() {
 
 /// Copies the per-CPU data from the source to the per-CPU data areas of the
 /// given CPUs.
-fn copy_percpu_region<T: Iterator<Item = usize>>(source: *mut u8, dest_ids: T) {
+fn copy_percpu_region<T: Iterator<Item = usize>>(source: *const u8, dest_ids: T) {
     let size = percpu_area_size();
 
     for dest_id in dest_ids {
         let dest_base = percpu_area_base_nolock(dest_id);
         unsafe {
-            core::ptr::copy_nonoverlapping(source as *const u8, dest_base as *mut u8, size);
+            core::ptr::copy_nonoverlapping(source, dest_base as *mut u8, size);
         }
     }
 }
@@ -158,7 +159,7 @@ fn init_inner(
     // Copy the per-CPU data from the `.percpu` section to the per-CPU areas of
     // all CPUs.
     copy_percpu_region(
-        _percpu_start as *mut u8,
+        addr_of!(_percpu_start),
         if do_not_copy_to_primary {
             1..cpu_count
         } else {
@@ -191,7 +192,7 @@ fn init_inner(
 /// Returns [`InitError::InvalidBase`] if `_percpu_start` is null, or
 /// [`InitError::UnalignedBase`] if `_percpu_start` is not 64-byte aligned.
 pub fn init_in_place() -> Result<usize, InitError> {
-    let base = _percpu_start as *mut u8;
+    let base = addr_of!(_percpu_start) as *mut u8;
     init_inner(base, percpu_area_num(), true)
 }
 
